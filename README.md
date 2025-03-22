@@ -1,2 +1,15 @@
 # ML_solution
 ADC reading algorithm
+
+
+# Python Tools
+sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+
+pip install tensorflow
+
+pip install scikit-learn
+
+
+# .png filer
+
+mimeopen -d || gio open
