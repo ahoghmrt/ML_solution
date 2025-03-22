@@ -28,7 +28,7 @@ def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed
         random.seed(random_seed)
 
     if n_signals is None:
-        n_signals = random.choice([1, 2, 3, 4])
+        n_signals = random.choice([5, 5, 5, 5])
 
     waveform = np.zeros_like(time)
     signal_truth = []
@@ -47,7 +47,8 @@ def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed
         amplitude = np.random.uniform(5, 20)
         signal = pulse_shape(time, t0, amplitude)
         waveform += signal
-        signal_truth.append((t0, amplitude))
+        realistic_amp = np.max(signal)  # more realistic amplitude after shaping
+        signal_truth.append((t0, realistic_amp))
 
     noise = np.random.normal(0, noise_std, size=waveform.shape)
     waveform += noise + baseline
@@ -72,7 +73,7 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
         wf_file = os.path.join(output_dir, f"waveform_{i+1:04d}.txt")
         np.savetxt(wf_file, np.column_stack((time, waveform)), header="Time(ns)\tAmplitude", fmt="%.2f")
 
-        # Save truth
+        # Save truth with t0 and realistic amplitude
         truth_file = os.path.join(output_dir, f"truth_{i+1:04d}.txt")
         with open(truth_file, "w") as f:
             f.write("Signal Index\tTime (ns)\tAmplitude\n")
@@ -86,9 +87,9 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=100,
+        num_waveforms=10000,
         output_dir="waveform_raw",
-        noise_std=0.5,
+        noise_std=0.3,
         baseline=200.0,
-        min_spacing=10
+        min_spacing=1
     )

@@ -30,9 +30,11 @@ X_train, X_val, y_train, y_val = train_test_split(X_norm, y, test_size=0.2, rand
 # Define Model Architecture
 # -------------------------------
 model = keras.Sequential([
-    layers.Input(shape=(X.shape[1],)),
-    layers.Dense(128, activation='relu'),
-    layers.Dense(128, activation='relu'),
+    layers.Reshape((X.shape[1], 1), input_shape=(X.shape[1],)),
+    layers.Conv1D(32, 3, activation='relu'),
+    layers.MaxPooling1D(2),
+    layers.Conv1D(64, 3, activation='relu'),
+    layers.GlobalMaxPooling1D(),
     layers.Dense(64, activation='relu'),
     layers.Dense(y.shape[1])
 ])
