@@ -28,7 +28,7 @@ def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed
         random.seed(random_seed)
 
     if n_signals is None:
-        n_signals = random.choice([5, 5, 5, 5])
+        n_signals = random.choice([5,5,5,5])
 
     waveform = np.zeros_like(time)
     signal_truth = []
@@ -87,9 +87,9 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=10000,
+        num_waveforms=100000,
         output_dir="waveform_raw",
-        noise_std=0.3,
+        noise_std=0.5,
         baseline=200.0,
-        min_spacing=1
+        min_spacing=10
     )
