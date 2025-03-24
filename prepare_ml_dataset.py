@@ -1,57 +1,63 @@
 import numpy as np
 import os
-from glob import glob
 
-# -------------------------------
-# Parameters
-# -------------------------------
+# ----------------------------
+# Configuration
+# ----------------------------
+max_signals = 5  # Maximum possible number of signals per waveform
 input_dir = "waveform_baseline_removed"
 truth_dir = "waveform_raw"
-output_file = "ml_training_data/training_data.npz"
-max_signals = 5
+output_dir = "ml_training_data"
+os.makedirs(output_dir, exist_ok=True)
 
-os.makedirs("ml_training_data", exist_ok=True)
-
-# -------------------------------
-# Load waveforms and corresponding truth
-# -------------------------------
-waveform_files = sorted(glob(os.path.join(input_dir, "waveform_*.txt")))
-
-all_waveforms = []
-all_labels = []
+waveforms = []
+labels_regression = []  # (t0, A) padded up to max_signals
+labels_count = []  # integer count of signals per waveform
 time = None
 
-for wf_file in waveform_files:
-    data = np.loadtxt(wf_file, skiprows=1)
-    time = data[:, 0] if time is None else time
-    waveform = data[:, 1]
-    all_waveforms.append(waveform)
+for fname in sorted(os.listdir(input_dir)):
+    if not fname.endswith(".txt"):
+        continue
 
-    idx = os.path.basename(wf_file).split("_")[-1].split(".")[0]
-    truth_file = os.path.join(truth_dir, f"truth_{idx}.txt")
+    wf_path = os.path.join(input_dir, fname)
+    truth_fname = fname.replace("waveform", "truth")
+    truth_path = os.path.join(truth_dir, truth_fname)
 
-    label_array = np.zeros((max_signals, 2))
-    if os.path.exists(truth_file):
-        truth_data = np.loadtxt(truth_file, skiprows=1)
+    waveform = np.loadtxt(wf_path)[:, 1]  # Load only amplitude column
+    waveforms.append(waveform)
+    if time is None:
+        time = np.loadtxt(wf_path)[:, 0]  # Load time column once
 
-        # Handle single-line truth file
-        if truth_data.ndim == 1:
-            truth_data = truth_data.reshape(1, -1)
+    # Read truth file
+    t0_amp_pairs = []
+    with open(truth_path) as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) >= 3:
+                try:
+                    t0 = float(parts[1])
+                    amp = float(parts[2])
+                    t0_amp_pairs.append([t0, amp])
+                except ValueError:
+                    continue
 
-        for i, row in enumerate(truth_data):
-            if i < max_signals and row.shape[0] >= 3:
-                t0 = row[1]
-                amp = row[2]
-                label_array[i, 0] = t0
-                label_array[i, 1] = amp
+    count = len(t0_amp_pairs)
+    labels_count.append(count)
 
-    all_labels.append(label_array)
+    # Pad t0_amp_pairs to max_signals
+    t0_amp_padded = t0_amp_pairs[:max_signals] + [[0.0, 0.0]] * (max_signals - len(t0_amp_pairs))
+    labels_regression.append(t0_amp_padded)
 
-# -------------------------------
-# Save dataset to .npz
-# -------------------------------
-all_waveforms = np.array(all_waveforms)
-all_labels = np.array(all_labels)
-np.savez(output_file, waveforms=all_waveforms, labels=all_labels, time=time)
+# Convert to arrays
+waveforms = np.array(waveforms)
+labels_regression = np.array(labels_regression)  # shape (samples, max_signals, 2)
+labels_count = np.array(labels_count)  # shape (samples,)
+time = np.array(time)
 
-print(f"✅ Saved ML training dataset: {output_file}")
+# Save separate datasets
+np.savez(os.path.join(output_dir, "training_data_signals.npz"), waveforms=waveforms, labels=labels_regression, time=time)
+np.savez(os.path.join(output_dir, "training_data_counts.npz"), waveforms=waveforms, labels=labels_count, time=time)
+
+print("✅ Saved:")
+print(" - training_data_signals.npz (for t0, amplitude regression)")
+print(" - training_data_counts.npz (for signal count classification)")
