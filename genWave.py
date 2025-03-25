@@ -88,7 +88,7 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=20000,
+        num_waveforms=10,
         output_dir="waveform_raw",
         noise_std=0.2,
         baseline=200.0,
