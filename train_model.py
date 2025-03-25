@@ -5,22 +5,24 @@ from tensorflow.keras import layers
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import os
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from tensorflow.keras.utils import to_categorical
 
 # -------------------------------
 # Load ML Dataset
 # -------------------------------
-
 dataset_path = "ml_training_data/training_data.npz"
 if not os.path.exists(dataset_path):
     raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
 
 data = np.load(dataset_path)
 X = data["waveforms"]
-y = data["labels"].reshape(X.shape[0], -1)
+y = data["labels"].reshape(X.shape[0], -1)  # (n_samples, max_signals*3)
 time = data["time"]
+count = data["counts"]
 
 print(f"✅ Loaded dataset: {X.shape[0]} samples, each with {X.shape[1]} time bins")
-print(f"✅ Label shape: {y.shape}, Time shape: {time.shape}")
+print(f"✅ Label shape: {y.shape}, Count shape: {count.shape}, Time shape: {time.shape}")
 
 # -------------------------------
 # Normalize Inputs
@@ -30,72 +32,82 @@ X_std = X.std(axis=1, keepdims=True)
 X_norm = (X - X_mean) / (X_std + 1e-8)
 
 # -------------------------------
+# Encode Signal Count as Classification
+# -------------------------------
+max_signals = y.shape[1] // 3
+num_classes = max_signals + 1
+count_clipped = np.clip(count, 0, max_signals).astype(int)
+count_categorical = to_categorical(count_clipped, num_classes=num_classes)
+
+# -------------------------------
 # Train/Validation Split
 # -------------------------------
-X_train, X_val, y_train, y_val = train_test_split(X_norm, y, test_size=0.2, random_state=42)
+X_train, X_val, y_train, y_val, count_train, count_val = train_test_split(
+    X_norm, y, count_categorical, test_size=0.2, random_state=42
+)
 
 # -------------------------------
-# Define Model Architecture
+# Define Model Architecture (t0, A, Presence + Signal Count Classification)
 # -------------------------------
-model = keras.Sequential([
-    layers.Input(shape=(X.shape[1],)),
-    layers.Dense(128, activation='relu'),
-    layers.Dense(128, activation='relu'),
-    layers.Dense(64, activation='relu'),
-    layers.Dense(y.shape[1])
-])
+input_layer = layers.Input(shape=(X.shape[1],))
+x = layers.Reshape((X.shape[1], 1))(input_layer)
+x = layers.Conv1D(32, kernel_size=3, activation='relu')(x)
+x = layers.MaxPooling1D(pool_size=2)(x)
+x = layers.Conv1D(64, kernel_size=3, activation='relu')(x)
+x = layers.GlobalMaxPooling1D()(x)
+x = layers.Dense(64, activation='relu')(x)
 
-model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+signal_output = layers.Dense(y.shape[1], activation='linear', name='signal_output')(x)
+count_output = layers.Dense(num_classes, activation='softmax', name='count_output')(x)
+
+model = keras.Model(inputs=input_layer, outputs=[signal_output, count_output])
+
+model.compile(
+    optimizer='adam',
+    loss={'signal_output': 'mse', 'count_output': 'categorical_crossentropy'},
+    metrics={'signal_output': 'mae', 'count_output': 'accuracy'},
+    loss_weights={'signal_output': 1.0, 'count_output': 3.0}
+)
 
 # -------------------------------
 # Train Model
 # -------------------------------
 history = model.fit(
-    X_train, y_train,
-    validation_data=(X_val, y_val),
+    X_train,
+    {'signal_output': y_train, 'count_output': count_train},
+    validation_data=(X_val, {'signal_output': y_val, 'count_output': count_val}),
     epochs=30,
     batch_size=32,
     verbose=1
 )
 
 # -------------------------------
-# Evaluate & Save Results using baseline-subtracted waveforms and truth labels
-# Calculate accuracy in numbers
+# Evaluate & Save Results
 # -------------------------------
-# Predict using baseline-subtracted validation waveforms
-# Compare predictions to ground truth time-amplitude pairs from truth files
-y_pred = model.predict(X_val)
+pred_signal, pred_count = model.predict(X_val)
+pred_signal = pred_signal.reshape((-1, max_signals, 3))  # reshape to (samples, signals, 3)
+pred_count_labels = np.argmax(pred_count, axis=1)
+true_count_labels = np.argmax(count_val, axis=1)
+
 os.makedirs("ml_training_data", exist_ok=True)
 
-plt.figure(figsize=(12, 5))
-plt.subplot(1, 2, 1)
-for i in range(0, y.shape[1], 2):
-    plt.scatter(y_val[:, i], y_pred[:, i], alpha=0.5, label=f'Signal {i//2 + 1}')
-plt.xlabel("True t0")
-plt.ylabel("Predicted t0")
-plt.title("t0 Prediction")
-plt.legend()
+# -------------------------------
+# Accuracy Metrics
+# -------------------------------
+for i in range(max_signals):
+    mae_t0 = mean_absolute_error(y_val[:, i*3], pred_signal[:, i, 0])
+    rmse_t0 = np.sqrt(mean_squared_error(y_val[:, i*3], pred_signal[:, i, 0]))
+    mae_amp = mean_absolute_error(y_val[:, i*3+1], pred_signal[:, i, 1])
+    rmse_amp = np.sqrt(mean_squared_error(y_val[:, i*3+1], pred_signal[:, i, 1]))
+    print(f"📊 Signal {i+1} - t0: MAE = {mae_t0:.3f}, RMSE = {rmse_t0:.3f}")
+    print(f"📊 Signal {i+1} - Amplitude: MAE = {mae_amp:.3f}, RMSE = {rmse_amp:.3f}")
 
-plt.subplot(1, 2, 2)
-for i in range(1, y.shape[1], 2):
-    plt.scatter(y_val[:, i], y_pred[:, i], alpha=0.5, label=f'Signal {i//2 + 1}')
-plt.xlabel("True Amplitude")
-plt.ylabel("Predicted Amplitude")
-plt.title("Amplitude Prediction")
-plt.legend()
-
-plt.tight_layout()
-plt.savefig("ml_training_data/training_evaluation_plot.png")
-plt.close()
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-
-for i in range(y.shape[1]):
-    mae = mean_absolute_error(y_val[:, i], y_pred[:, i])
-    rmse = np.sqrt(mean_squared_error(y_val[:, i], y_pred[:, i]))
-    param = "t0" if i % 2 == 0 else "Amplitude"
-    signal_num = (i // 2) + 1
-    print(f"📊 Signal {signal_num} - {param}: MAE = {mae:.3f}, RMSE = {rmse:.3f}")
+# -------------------------------
+# Signal Count Prediction Evaluation
+# -------------------------------
+print("\n📊 Predicted vs True Signal Counts (sample preview):")
+for i in range(10):
+    print(f"Sample {i}: Predicted = {pred_count_labels[i]}, True = {true_count_labels[i]}")
 
 # Save model
 model.save("ml_training_data/signal_extraction_model.keras")

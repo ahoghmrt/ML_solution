@@ -28,7 +28,7 @@ def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed
         random.seed(random_seed)
 
     if n_signals is None:
-        n_signals = random.choice([5,5,5,5])
+        n_signals = random.choice([2,3,4,5])
 
     waveform = np.zeros_like(time)
     signal_truth = []
@@ -79,6 +79,7 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
             f.write("Signal Index\tTime (ns)\tAmplitude\n")
             for idx, (t0, amp) in enumerate(signal_truth, 1):
                 f.write(f"{idx}\t{t0:.2f}\t{amp:.2f}\n")
+            f.write(f"Number of Signals: {n_signals}\n")
 
         print(f"✅ Saved: {wf_file}, {truth_file}")
 
@@ -87,9 +88,9 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=100000,
+        num_waveforms=20000,
         output_dir="waveform_raw",
-        noise_std=0.5,
+        noise_std=0.2,
         baseline=200.0,
-        min_spacing=10
+        min_spacing=2
     )
