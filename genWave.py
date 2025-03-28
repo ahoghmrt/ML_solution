@@ -22,13 +22,16 @@ def pulse_shape(t, t0, amplitude, tau_rise=2, tau_fall=10):
 # -------------------------------
 # WAVEFORM GENERATOR FUNCTION
 # -------------------------------
-def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed=None, baseline=0.0):
+def generate_waveform(n_signals=None, noise_std=None, min_spacing=10, random_seed=None, baseline=0.0):
     if random_seed is not None:
         np.random.seed(random_seed)
         random.seed(random_seed)
 
+    if noise_std is None:
+        noise_std = random.choice([0.2, 0.3, 0.4, 0.5])
+
     if n_signals is None:
-        n_signals = random.choice([2,3,4,5])
+        n_signals = random.choice([0,2,4,6])
 
     waveform = np.zeros_like(time)
     signal_truth = []
@@ -47,8 +50,13 @@ def generate_waveform(n_signals=None, noise_std=0.5, min_spacing=10, random_seed
         amplitude = np.random.uniform(5, 20)
         signal = pulse_shape(time, t0, amplitude)
         waveform += signal
-        realistic_amp = np.max(signal)  # more realistic amplitude after shaping
-        signal_truth.append((t0, realistic_amp))
+
+        #realistic_amp = np.max(signal)  # more realistic amplitude after shaping
+        peak_index = np.argmax(signal)
+        peak_time = time[peak_index]
+        realistic_amp = signal[peak_index]
+
+        signal_truth.append((peak_time, realistic_amp))
 
     noise = np.random.normal(0, noise_std, size=waveform.shape)
     waveform += noise + baseline
@@ -88,9 +96,9 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=10,
+        num_waveforms=50000,
         output_dir="waveform_raw",
-        noise_std=0.2,
+        noise_std=None,
         baseline=200.0,
         min_spacing=2
     )

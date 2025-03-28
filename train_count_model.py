@@ -46,7 +46,7 @@ model.summary()
 history = model.fit(
     X_train, y_train,
     validation_data=(X_val, y_val),
-    epochs=30,
+    epochs=45,
     batch_size=64,
     verbose=1
 )

@@ -1,4 +1,0 @@
-Signal Index	Time (ns)	Amplitude
-1	38.49	8.28
-2	70.65	3.02
-Number of Signals: 2
