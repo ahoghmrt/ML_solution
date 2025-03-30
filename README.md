@@ -16,3 +16,11 @@ mimeopen -d || gio open
 # delete files
 
 find waveform_raw/ -type f -delete
+
+# git upluad
+
+git add .
+
+git commit -m "Added a new feature"
+
+git push origin tanbranch
