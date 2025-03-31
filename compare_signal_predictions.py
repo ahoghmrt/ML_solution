@@ -2,39 +2,46 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from tensorflow import keras
-from sklearn.preprocessing import StandardScaler
+import joblib
 
 # ----------------------------
 # Load prediction models
 # ----------------------------
-signal_model = keras.models.load_model("signal_model_using_counts.keras")
-count_model = keras.models.load_model("signal_count_model_with_candidates.keras")
+signal_model = keras.models.load_model("signal_model.keras")
+count_model = keras.models.load_model("signal_count_model.keras")
 
 # ----------------------------
-# Load waveform + candidate inputs
+# Load data
 # ----------------------------
-data_sig = np.load("ml_training_data/training_data_signals.npz")
-data_cnt = np.load("ml_training_data/training_data_counts.npz")
-
-X = data_sig["waveforms"]           # (samples, 120)
-y_true = data_sig["labels"]         # (samples, max_signals, 2)
-time = data_sig["time"]
-
-X_t0 = data_cnt["candidate_t0s"]    # (samples, max_signals)
-X_amp = data_cnt["candidate_amps"]  # (samples, max_signals)
+data = np.load("ml_training_data/training_data_signals.npz")
+X = data["waveforms"]           # (samples, 120)
+y_true = data["labels"]         # (samples, max_signals, 2)
+time = data["time"]
 
 # ----------------------------
-# Preprocessing
+# Load scalers for inverse transform
 # ----------------------------
-X_scaled = keras.utils.normalize(X, axis=1)
-X_t0_scaled = StandardScaler().fit_transform(X_t0)
-X_amp_scaled = StandardScaler().fit_transform(X_amp)
+scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
+scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
+scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
+
+# ----------------------------
+# Normalize inputs using saved scaler
+# ----------------------------
+X_scaled = scaler_wave.transform(X)
 
 # ----------------------------
 # Predict counts and signals
 # ----------------------------
-pred_counts = np.argmax(count_model.predict([X_scaled, X_t0_scaled, X_amp_scaled]), axis=1)
-pred_signals = signal_model.predict(X)
+pred_counts = np.argmax(count_model.predict(X_scaled), axis=1)
+pred_signals_norm = signal_model.predict(X_scaled[..., np.newaxis])
+
+# ----------------------------
+# Inverse transform predictions
+# ----------------------------
+pred_signals = pred_signals_norm.copy()
+pred_signals[:, 0::2] = scaler_t0.inverse_transform(pred_signals[:, 0::2])  # t0s
+pred_signals[:, 1::2] = scaler_amp.inverse_transform(pred_signals[:, 1::2])  # amps
 
 # ----------------------------
 # Prepare comparison arrays
@@ -43,14 +50,18 @@ pred_t0s_all, true_t0s_all = [], []
 pred_amps_all, true_amps_all = [], []
 
 for i in range(len(X)):
-    count = min(pred_counts[i], pred_signals.shape[1])  # Clamp to model output size
+    count = min(pred_counts[i], pred_signals.shape[1] // 2)  # Clamp to model output size
     for j in range(count):
-        pred_t0, pred_amp = pred_signals[i][j]
+        pred_t0 = pred_signals[i][2 * j]
+        pred_amp = pred_signals[i][2 * j + 1]
         true_t0, true_amp = y_true[i][j]
-        pred_t0s_all.append(pred_t0)
-        pred_amps_all.append(pred_amp)
-        true_t0s_all.append(true_t0)
-        true_amps_all.append(true_amp)
+
+        # Only add non-zero predictions
+        if pred_t0 != 0 or pred_amp != 0:
+            pred_t0s_all.append(pred_t0)
+            pred_amps_all.append(pred_amp)
+            true_t0s_all.append(true_t0)
+            true_amps_all.append(true_amp)
 
 # ----------------------------
 # Plot scatter comparison

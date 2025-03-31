@@ -1,54 +1,47 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tensorflow import keras
 import os
-from sklearn.preprocessing import StandardScaler
+from tensorflow import keras
+import joblib
 
 # ----------------------------
-# Load models
+# Load models and scalers
 # ----------------------------
-signal_model = keras.models.load_model("signal_model_using_counts.keras")
-count_model = keras.models.load_model("signal_count_model_with_candidates.keras")
+signal_model = keras.models.load_model("signal_model.keras")
+count_model = keras.models.load_model("signal_count_model.keras")
+scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
+scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
+scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
 
 # ----------------------------
 # Load data
 # ----------------------------
-data_sig = np.load("ml_training_data/training_data_signals.npz")
-data_cnt = np.load("ml_training_data/training_data_counts.npz")
-
-X = data_sig["waveforms"]
-y_true = data_sig["labels"]
-time = data_sig["time"]
-X_t0 = data_cnt["candidate_t0s"]
-X_amp = data_cnt["candidate_amps"]
-
-# ----------------------------
-# Normalize inputs
-# ----------------------------
-X_scaled = keras.utils.normalize(X, axis=1)
-X_t0_scaled = StandardScaler().fit_transform(X_t0)
-X_amp_scaled = StandardScaler().fit_transform(X_amp)
+data = np.load("ml_training_data/training_data_signals.npz")
+X = data["waveforms"]
+y_true = data["labels"]
+time = data["time"]
 
 # ----------------------------
 # Choose range to visualize
 # ----------------------------
-start_index = 31
-end_index = 60
+start_index = 1   # 👈 change here
+end_index = 200    # 👈 and here
 
 os.makedirs("waveform_inspection", exist_ok=True)
+
+# Normalize waveforms
+X_scaled = scaler_wave.transform(X)
 
 for idx in range(start_index, end_index):
     waveform = X[idx]
     true_signals = y_true[idx]
+    pred_count = np.argmax(count_model.predict(X_scaled[[idx]]), axis=1)[0]
+    pred_signals_norm = signal_model.predict(X_scaled[[idx]][..., np.newaxis])[0]
 
-    # Prepare model inputs for this waveform
-    x_input = X_scaled[[idx]]
-    x_t0_input = X_t0_scaled[[idx]]
-    x_amp_input = X_amp_scaled[[idx]]
-
-    pred_count = np.argmax(count_model.predict([x_input, x_t0_input, x_amp_input]), axis=1)[0]
-    pred_signals = signal_model.predict(X[[idx]])[0]
-    pred_count = min(pred_count, pred_signals.shape[0])  # Clamp to max_signals
+    # Inverse transform predictions
+    pred_signals = pred_signals_norm.copy()
+    pred_signals[0::2] = scaler_t0.inverse_transform([pred_signals[0::2]])[0]
+    pred_signals[1::2] = scaler_amp.inverse_transform([pred_signals[1::2]])[0]
 
     # Extract true signals
     true_t0, true_amp = [], []
@@ -60,7 +53,8 @@ for idx in range(start_index, end_index):
     # Extract predicted signals
     pred_t0, pred_amp = [], []
     for j in range(pred_count):
-        t0, amp = pred_signals[j]
+        t0 = pred_signals[2 * j]
+        amp = pred_signals[2 * j + 1]
         pred_t0.append(t0)
         pred_amp.append(amp)
 
@@ -68,7 +62,7 @@ for idx in range(start_index, end_index):
     plt.figure(figsize=(10, 4))
     plt.plot(time, waveform, color='gray', label='Waveform')
     plt.scatter(true_t0, true_amp, color='blue', edgecolors='k', label='True', s=60)
-    plt.scatter(pred_t0, pred_amp, color='green', marker='x', label='Predicted', s=60)
+    plt.scatter(pred_t0, pred_amp, color='green', edgecolors='k', marker='x', label='Predicted', s=60)
     plt.title(f"Waveform #{idx}")
     plt.xlabel("Time (ns)")
     plt.ylabel("Amplitude")
