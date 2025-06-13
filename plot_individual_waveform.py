@@ -25,7 +25,7 @@ time = data["time"]
 # Choose range to visualize
 # ----------------------------
 start_index = 1   # 👈 change here
-end_index = 200    # 👈 and here
+end_index = 300    # 👈 and here
 
 os.makedirs("waveform_inspection", exist_ok=True)
 

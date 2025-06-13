@@ -2,11 +2,14 @@ import numpy as np
 import os
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import pandas as pd
+from tensorflow.keras.callbacks import EarlyStopping
+
+
 
 # -----------------------------
 # Load Dataset
@@ -26,18 +29,48 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # -----------------------------
-# Build Model (Input = waveform, Output = signal count class)
+# Build Model (Model = FLO, Input = waveform, Output = signal count class)
 # -----------------------------
-input_layer = layers.Input(shape=(X.shape[1],), name="waveform_input")
-x = layers.Dense(128, activation='relu')(input_layer)
-x = layers.Dense(64, activation='relu')(x)
-x = layers.Dense(32, activation='relu')(x)
-output = layers.Dense(4, activation='softmax', name="count_output")(x)  # predict 0–6
+# input_layer = layers.Input(shape=(X.shape[1],), name="waveform_input")
+# x = layers.Dense(128, activation='relu')(input_layer)
+# x = layers.Dense(64, activation='relu')(x)
+# x = layers.Dense(32, activation='relu')(x)
+# output = layers.Dense(4, activation='softmax', name="count_output")(x)  # predict 0–3
 
-model = keras.Model(inputs=input_layer, outputs=output)
-model.compile(optimizer='adam',
-              loss='sparse_categorical_crossentropy',
-              metrics=['accuracy'])
+# model = keras.Model(inputs=input_layer, outputs=output)
+# model.compile(optimizer='adam',
+#               loss='sparse_categorical_crossentropy',
+#               metrics=['accuracy'])
+
+# model.summary()
+
+# -----------------------------
+# Build Model (Model = CONV, Input = waveform, Output = signal count class)
+# -----------------------------
+
+input_layer = layers.Input(shape=(X.shape[1], 1), name="waveform_input")
+
+# 🔁 Two Conv1D Layers
+x = layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')(input_layer)
+x = layers.Conv1D(64, kernel_size=5, activation='relu', padding='same')(x)
+
+# 🧠 Flatten preserves all learned features
+x = layers.Flatten()(x)
+
+# 🧱 Dense Block
+x = layers.Dense(128, activation='relu')(x)
+x = layers.Dropout(0.3)(x)
+x = layers.Dense(64, activation='relu')(x)
+
+# 🎯 Output for classification (0 to 6)
+output = layers.Dense(7, activation='softmax', name="count_output")(x)
+
+model = models.Model(inputs=input_layer, outputs=output)
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
 
 model.summary()
 
@@ -45,8 +78,33 @@ model.summary()
 # Train/Test Split
 # -----------------------------
 X_train, X_val, y_train, y_val = train_test_split(
-    X_scaled, y, test_size=0.2, random_state=42
+    X_scaled, y, test_size=0.35, random_state=42
 )
+
+# -----------------------------
+# Callbacks
+# -----------------------------
+callbacks = [
+    keras.callbacks.EarlyStopping(
+        monitor='val_accuracy',
+        patience=6,
+        restore_best_weights=True,
+        verbose=1
+    ),
+    keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=3,
+        min_lr=1e-6,
+        verbose=1
+    ),
+    keras.callbacks.ModelCheckpoint(
+        filepath='best_count_model.keras',
+        monitor='val_accuracy',
+        save_best_only=True,
+        verbose=1
+    )
+]
 
 # -----------------------------
 # Train
@@ -54,8 +112,9 @@ X_train, X_val, y_train, y_val = train_test_split(
 history = model.fit(
     X_train, y_train,
     validation_data=(X_val, y_val),
-    epochs=30,
-    batch_size=64
+    epochs=40,
+    batch_size=128,
+    callbacks=callbacks
 )
 
 # -----------------------------

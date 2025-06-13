@@ -52,9 +52,7 @@ X_wave_scaled = np.expand_dims(X_wave_scaled, axis=-1)
 # Save waveform scaler
 joblib.dump(scaler_wave, "training_plots/waveform_scaler.pkl")
 
-# -----------------------------
-# Build Functional Model (Input = waveform only)
-# -----------------------------
+
 input_wave = layers.Input(shape=(X_wave.shape[1], 1), name="waveform_input")
 
 # Conv1D processing
@@ -71,11 +69,12 @@ model = keras.Model(inputs=input_wave, outputs=output)
 model.compile(optimizer='adam', loss='mae', metrics=['mae'])
 model.summary()
 
+
 # -----------------------------
 # Train/Test Split
 # -----------------------------
 X_train, X_val, y_train, y_val = train_test_split(
-    X_wave_scaled, y_flat, test_size=0.2, random_state=42
+    X_wave_scaled, y_flat, test_size=0.35, random_state=42
 )
 
 # -----------------------------
