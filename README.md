@@ -1,28 +1,23 @@
 # ML_solution
-<<<<<<< HEAD
-ADC reading algorithm
-
-
-# Python Tools
-=======
 
 ADC reading algorithm
 
 # Python Tools
 
->>>>>>> tanbranch
+ADC reading algorithm
+
+# Python Tools
+
 sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 pip install tensorflow
 
 pip install scikit-learn
 
-<<<<<<< HEAD
-
 # .png filer
 
 mimeopen -d || gio open
-=======
+
 # For Trkhush
 
 genWave.py - creates waveforms close to reality in folder waveform_raw
@@ -55,4 +50,3 @@ git add .
 git commit -m "Added a new feature"
 
 git push origin tanbranch
->>>>>>> tanbranch
