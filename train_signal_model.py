@@ -34,8 +34,12 @@ scaler_amp = StandardScaler()
 t0s_norm = scaler_t0.fit_transform(t0s)
 amps_norm = scaler_amp.fit_transform(amps)
 
-y_norm = np.stack([t0s_norm, amps_norm], axis=-1)
-y_flat = y_norm.reshape((y.shape[0], max_signals * 2))
+# Create presence flags (1 if either t0 or amp > 0, else 0)
+presence_flags = ((t0s != 0) | (amps != 0)).astype(np.float32)
+
+# Combine into a single label array with shape (samples, max_signals, 3)
+y_norm = np.stack([t0s_norm, amps_norm, presence_flags], axis=-1)
+y_flat = y_norm.reshape((y.shape[0], max_signals * 3))
 
 # Save target scalers
 os.makedirs("training_plots", exist_ok=True)
@@ -52,7 +56,9 @@ X_wave_scaled = np.expand_dims(X_wave_scaled, axis=-1)
 # Save waveform scaler
 joblib.dump(scaler_wave, "training_plots/waveform_scaler.pkl")
 
-
+# -----------------------------
+# Build Model
+# -----------------------------
 input_wave = layers.Input(shape=(X_wave.shape[1], 1), name="waveform_input")
 
 # Conv1D processing
@@ -63,12 +69,11 @@ x = layers.Flatten()(x)
 # Dense processing
 x = layers.Dense(128, activation='relu')(x)
 x = layers.Dense(64, activation='relu')(x)
-output = layers.Dense(max_signals * 2, name="signal_output")(x)
+output = layers.Dense(max_signals * 3, name="signal_output")(x)
 
 model = keras.Model(inputs=input_wave, outputs=output)
 model.compile(optimizer='adam', loss='mae', metrics=['mae'])
 model.summary()
-
 
 # -----------------------------
 # Train/Test Split

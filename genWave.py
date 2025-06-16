@@ -31,20 +31,16 @@ def generate_waveform(n_signals=None, noise_std=None, min_spacing=10, random_see
         noise_std = random.choice([0.2, 0.3, 0.4, 0.5])
 
     if n_signals is None:
-        n_signals = random.choice([0,1,2,3,4,5,6])
+        n_signals = random.choice([0,0,1])
 
     waveform = np.zeros_like(time)
     signal_truth = []
 
-    t0_list = []
-    attempts = 0
-    while len(t0_list) < n_signals and attempts < 1000:
-        candidate_t0 = np.random.uniform(5, time_end - 10)
-        if all(abs(candidate_t0 - existing) >= min_spacing for existing in t0_list):
-            t0_list.append(candidate_t0)
-        attempts += 1
+    step_size = min_spacing
+    possible_t0s = np.arange(5, time_end - 5, step_size)
+    np.random.shuffle(possible_t0s)
+    t0_list = sorted(possible_t0s[:n_signals])
 
-    t0_list.sort()
 
     for t0 in t0_list:
         amplitude = np.random.uniform(5, 20)
@@ -96,9 +92,9 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
 # -------------------------------
 if __name__ == "__main__":
     generate_dataset(
-        num_waveforms=50000,
+        num_waveforms=100000,
         output_dir="waveform_raw",
         noise_std=0.5,
         baseline=200.0,
-        min_spacing=0.0001
+        min_spacing=0.001
     )

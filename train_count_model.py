@@ -63,7 +63,7 @@ x = layers.Dropout(0.3)(x)
 x = layers.Dense(64, activation='relu')(x)
 
 # 🎯 Output for classification (0 to 6)
-output = layers.Dense(7, activation='softmax', name="count_output")(x)
+output = layers.Dense(4, activation='softmax', name="count_output")(x)
 
 model = models.Model(inputs=input_layer, outputs=output)
 model.compile(

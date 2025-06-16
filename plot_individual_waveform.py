@@ -8,7 +8,6 @@ import joblib
 # Load models and scalers
 # ----------------------------
 signal_model = keras.models.load_model("signal_model.keras")
-count_model = keras.models.load_model("signal_count_model.keras")
 scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
 scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
 scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
@@ -20,12 +19,13 @@ data = np.load("ml_training_data/training_data_signals.npz")
 X = data["waveforms"]
 y_true = data["labels"]
 time = data["time"]
+max_signals = y_true.shape[1]
 
 # ----------------------------
 # Choose range to visualize
 # ----------------------------
 start_index = 1   # 👈 change here
-end_index = 300    # 👈 and here
+end_index = 20    # 👈 and here
 
 os.makedirs("waveform_inspection", exist_ok=True)
 
@@ -35,13 +35,21 @@ X_scaled = scaler_wave.transform(X)
 for idx in range(start_index, end_index):
     waveform = X[idx]
     true_signals = y_true[idx]
-    pred_count = np.argmax(count_model.predict(X_scaled[[idx]]), axis=1)[0]
     pred_signals_norm = signal_model.predict(X_scaled[[idx]][..., np.newaxis])[0]
 
-    # Inverse transform predictions
-    pred_signals = pred_signals_norm.copy()
-    pred_signals[0::2] = scaler_t0.inverse_transform([pred_signals[0::2]])[0]
-    pred_signals[1::2] = scaler_amp.inverse_transform([pred_signals[1::2]])[0]
+    # Extract predicted components
+    pred_t0_norm = pred_signals_norm[0::3]
+    pred_amp_norm = pred_signals_norm[1::3]
+    pred_presences = pred_signals_norm[2::3]
+
+    # Apply inverse transforms
+    pred_t0 = scaler_t0.inverse_transform([pred_t0_norm])[0]
+    pred_amp = scaler_amp.inverse_transform([pred_amp_norm])[0]
+
+    # Use presence flag to mask predictions
+    mask = pred_presences > 0.5
+    pred_t0 = pred_t0[mask]
+    pred_amp = pred_amp[mask]
 
     # Extract true signals
     true_t0, true_amp = [], []
@@ -49,14 +57,6 @@ for idx in range(start_index, end_index):
         if t0 > 0 or amp > 0:
             true_t0.append(t0)
             true_amp.append(amp)
-
-    # Extract predicted signals
-    pred_t0, pred_amp = [], []
-    for j in range(pred_count):
-        t0 = pred_signals[2 * j]
-        amp = pred_signals[2 * j + 1]
-        pred_t0.append(t0)
-        pred_amp.append(amp)
 
     # Plot
     plt.figure(figsize=(10, 4))

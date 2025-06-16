@@ -5,122 +5,134 @@ from tensorflow import keras
 import joblib
 
 # ----------------------------
-# Load prediction models
+# Load model and scalers
 # ----------------------------
 signal_model = keras.models.load_model("signal_model.keras")
-count_model = keras.models.load_model("signal_count_model.keras")
-
-# ----------------------------
-# Load data
-# ----------------------------
-data = np.load("ml_training_data/training_data_signals.npz")
-X = data["waveforms"]           # (samples, 120)
-y_true = data["labels"]         # (samples, max_signals, 2)
-time = data["time"]
-
-# ----------------------------
-# Load scalers for inverse transform
-# ----------------------------
 scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
 scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
 scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
 
 # ----------------------------
-# Normalize inputs using saved scaler
+# Load data
+# ----------------------------
+data = np.load("ml_training_data/training_data_signals.npz")
+X = data["waveforms"]
+y_true = data["labels"]
+time = data["time"]
+max_signals = y_true.shape[1]
+
+# ----------------------------
+# Predict
 # ----------------------------
 X_scaled = scaler_wave.transform(X)
+pred_signals = signal_model.predict(X_scaled[..., np.newaxis])
+pred_t0s = scaler_t0.inverse_transform(pred_signals[:, 0::3])
+pred_amps = scaler_amp.inverse_transform(pred_signals[:, 1::3])
+pred_presence = pred_signals[:, 2::3]
+mask = pred_presence > 0.5
 
 # ----------------------------
-# Predict counts and signals
+# Prepare outputs
 # ----------------------------
-pred_counts = np.argmax(count_model.predict(X_scaled), axis=1)
-pred_signals_norm = signal_model.predict(X_scaled[..., np.newaxis])
+os.makedirs("comparison_plots", exist_ok=True)
+colors = plt.cm.tab10.colors
+slotwise_true_t0s = [[] for _ in range(max_signals)]
+slotwise_pred_t0s = [[] for _ in range(max_signals)]
+slotwise_true_amps = [[] for _ in range(max_signals)]
+slotwise_pred_amps = [[] for _ in range(max_signals)]
+true_t0s_all, pred_t0s_all, delta_t0s = [], [], []
+true_amps_all, pred_amps_all, delta_amps = [], [], []
 
 # ----------------------------
-# Inverse transform predictions
+# Compare
 # ----------------------------
-pred_signals = pred_signals_norm.copy()
-pred_signals[:, 0::2] = scaler_t0.inverse_transform(pred_signals[:, 0::2])  # t0s
-pred_signals[:, 1::2] = scaler_amp.inverse_transform(pred_signals[:, 1::2])  # amps
-
-# ----------------------------
-# Prepare comparison arrays
-# ----------------------------
-pred_t0s_all, true_t0s_all = [], []
-pred_amps_all, true_amps_all = [], []
-delta_t0s, delta_amps = [], []
-
 for i in range(len(X)):
-    count = min(pred_counts[i], pred_signals.shape[1] // 2)  # Clamp to model output size
-    for j in range(count):
-        pred_t0 = pred_signals[i][2 * j]
-        pred_amp = pred_signals[i][2 * j + 1]
-        true_t0, true_amp = y_true[i][j]
+    for j in range(max_signals):
+        if mask[i][j]:
+            pred_t0, pred_amp = pred_t0s[i][j], pred_amps[i][j]
+            true_t0, true_amp = y_true[i][j]
 
-        # Only add non-zero predictions
-        if pred_t0 != 0 or pred_amp != 0:
-            pred_t0s_all.append(pred_t0)
-            pred_amps_all.append(pred_amp)
+            slotwise_true_t0s[j].append(true_t0)
+            slotwise_pred_t0s[j].append(pred_t0)
+            slotwise_true_amps[j].append(true_amp)
+            slotwise_pred_amps[j].append(pred_amp)
+
             true_t0s_all.append(true_t0)
-            true_amps_all.append(true_amp)
+            pred_t0s_all.append(pred_t0)
             delta_t0s.append(pred_t0 - true_t0)
+
+            true_amps_all.append(true_amp)
+            pred_amps_all.append(pred_amp)
             delta_amps.append(pred_amp - true_amp)
 
 # ----------------------------
-# Plot scatter comparisons
+# Plot helpers
 # ----------------------------
-os.makedirs("comparison_plots", exist_ok=True)
+def scatter_combined(x_all, y_all, slotwise_x, slotwise_y, label, xlabel, ylabel, file_name):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for j in range(max_signals):
+        ax.scatter(slotwise_x[j], slotwise_y[j], label=f"Signal {j+1}", alpha=0.6, s=15, color=colors[j % 10])
+    ax.plot([min(x_all), max(x_all)], [min(x_all), max(x_all)], 'k--', label="Ideal")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(label)
+    ax.grid(True)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(f"comparison_plots/{file_name}.png")
+    plt.close()
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+def delta_histogram(deltas, title, xlabel, file_name, color):
+    plt.figure(figsize=(8, 5))
+    plt.hist(deltas, bins=100, alpha=0.75, color=color, edgecolor='black')
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel("Count")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(f"comparison_plots/{file_name}.png")
+    plt.close()
 
-# Left: Hexbin plot for t₀
-hb1 = ax1.hexbin(true_t0s_all, pred_t0s_all, gridsize=80, cmap='viridis', mincnt=1)
-ax1.plot([min(true_t0s_all), max(true_t0s_all)],
-         [min(true_t0s_all), max(true_t0s_all)], 'r--', label="Ideal")
-ax1.set_xlabel("True t₀ (ns)")
-ax1.set_ylabel("Predicted t₀ (ns)")
-ax1.set_title("Hexbin: True vs Predicted t₀")
-ax1.grid(True)
-plt.colorbar(hb1, ax=ax1, label='Counts')
-ax1.legend()
+# ----------------------------
+# Combined scatter + delta plots
+# ----------------------------
+scatter_combined(true_t0s_all, pred_t0s_all, slotwise_true_t0s, slotwise_pred_t0s,
+                 "True vs Predicted t₀", "True t₀ (ns)", "Predicted t₀ (ns)", "t0_comparison_colored_by_slot")
 
-# Right: Δt₀ histogram
-ax2.hist(delta_t0s, bins=100, alpha=0.75, color='skyblue', edgecolor='black')
-ax2.set_title("Δt₀ = Predicted - True")
-ax2.set_xlabel("Δt₀ (ns)")
-ax2.set_ylabel("Count")
-ax2.grid(True)
+scatter_combined(true_amps_all, pred_amps_all, slotwise_true_amps, slotwise_pred_amps,
+                 "True vs Predicted Amplitude", "True Amplitude", "Predicted Amplitude", "amplitude_comparison_colored_by_slot")
 
-plt.tight_layout()
-plt.savefig("comparison_plots/t0_comparison_combined.png")
-plt.show()
+delta_histogram(delta_t0s, "Δt₀ = Predicted - True", "Δt₀ (ns)", "delta_t0_histogram", 'skyblue')
+delta_histogram(delta_amps, "ΔA = Predicted - True", "ΔAmplitude", "delta_amplitude_histogram", 'salmon')
 
-# ----------------------------------------------
+# ----------------------------
+# Individual per-signal plots
+# ----------------------------
+for j in range(max_signals):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    ax1.scatter(slotwise_true_t0s[j], slotwise_pred_t0s[j], alpha=0.6, s=15, color=colors[j % 10])
+    if slotwise_true_t0s[j]:
+        min_val = min(slotwise_true_t0s[j] + slotwise_pred_t0s[j])
+        max_val = max(slotwise_true_t0s[j] + slotwise_pred_t0s[j])
+        ax1.plot([min_val, max_val], [min_val, max_val], 'k--')
+    ax1.set_title(f"Signal {j+1}: True vs Predicted t₀")
+    ax1.set_xlabel("True t₀ (ns)")
+    ax1.set_ylabel("Predicted t₀ (ns)")
+    ax1.grid(True)
 
-# Left: Hexbin plot for amplitude
-hb2 = ax1.hexbin(true_amps_all, pred_amps_all, gridsize=80, cmap='plasma', mincnt=1)
-ax1.plot([min(true_amps_all), max(true_amps_all)],
-         [min(true_amps_all), max(true_amps_all)], 'r--', label="Ideal")
-ax1.set_xlabel("True Amplitude")
-ax1.set_ylabel("Predicted Amplitude")
-ax1.set_title("Hexbin: True vs Predicted Amplitude")
-ax1.grid(True)
-plt.colorbar(hb2, ax=ax1, label='Counts')
-ax1.legend()
+    ax2.scatter(slotwise_true_amps[j], slotwise_pred_amps[j], alpha=0.6, s=15, color=colors[j % 10])
+    if slotwise_true_amps[j]:
+        min_val = min(slotwise_true_amps[j] + slotwise_pred_amps[j])
+        max_val = max(slotwise_true_amps[j] + slotwise_pred_amps[j])
+        ax2.plot([min_val, max_val], [min_val, max_val], 'k--')
+    ax2.set_title(f"Signal {j+1}: True vs Predicted Amplitude")
+    ax2.set_xlabel("True Amplitude")
+    ax2.set_ylabel("Predicted Amplitude")
+    ax2.grid(True)
 
-# Right: ΔAmplitude histogram
-ax2.hist(delta_amps, bins=100, alpha=0.75, color='salmon', edgecolor='black')
-ax2.set_title("ΔA = Predicted - True")
-ax2.set_xlabel("ΔAmplitude")
-ax2.set_ylabel("Count")
-ax2.grid(True)
+    plt.tight_layout()
+    plt.savefig(f"comparison_plots/signal_{j+1}_comparison.png")
+    plt.close()
 
-plt.tight_layout()
-plt.savefig("comparison_plots/amplitude_comparison_combined.png")
-plt.show()
-
-print("✅ Hexbin plots and delta histograms saved in 'comparison_plots/' folder.")
-
-
+print("✅ All comparison plots saved using presence flag masking.")
