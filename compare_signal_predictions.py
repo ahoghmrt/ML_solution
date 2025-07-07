@@ -1,8 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import tensorflow as tf
 from tensorflow import keras
 import joblib
+
+# @tf.keras.utils.register_keras_serializable()
+# def custom_loss(y_true, y_pred):
+#     y_true = tf.reshape(y_true, (-1, max_signals, 3))
+#     y_pred = tf.reshape(y_pred, (-1, max_signals, 3))
+
+#     t0_true, amp_true, pres_true = tf.split(y_true, 3, axis=-1)
+#     t0_pred, amp_pred, pres_pred_raw = tf.split(y_pred, 3, axis=-1)
+
+#     pres_pred = tf.sigmoid(pres_pred_raw)
+#     bce = tf.keras.losses.binary_crossentropy(pres_true, pres_pred)
+#     presence_mask = pres_true
+
+#     t0_loss = tf.reduce_mean(tf.abs(t0_pred - t0_true) * presence_mask)
+#     amp_loss = tf.reduce_mean(tf.abs(amp_pred - amp_true) * presence_mask)
+#     presence_loss = tf.reduce_mean(bce)
+
+#     return 0.3 * t0_loss + 0.6 * amp_loss + 0.1 * presence_loss
+
+# # ----------------------------
+# # Load model and scalers
+# # ----------------------------
+# signal_model = keras.models.load_model(
+#     "signal_model.keras",
+#     custom_objects={"custom_loss": custom_loss}
+# )
 
 # ----------------------------
 # Load model and scalers

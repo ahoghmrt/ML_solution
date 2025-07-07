@@ -4,7 +4,7 @@ import os
 # ----------------------------
 # Configuration
 # ----------------------------
-max_signals = 1  # Maximum possible number of signals per waveform
+max_signals = 3  # Maximum possible number of signals per waveform
 input_dir = "waveform_baseline_removed"
 truth_dir = "waveform_raw"
 output_dir = "ml_training_data"

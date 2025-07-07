@@ -18,14 +18,11 @@ baseline_subtract.py - removes baselines and saves waveforms in folder waveform_
 
 prepare_ml_dataset.py - creates training_data_signals.npz and training_data_counts.npz
 
-train_count_model.py - extracts number of signals
-
-train_signal_model.py - extracts signal (t0,amplitude) pairs
+train_signal_model.py - extracts signal (t0,amplitude, presense) pairs
 
 compare_signal_predictions.py - Compares Models predictions against truth values, saves in folder comparison_plots
 
-plot_individual_waveform.py - Plots baseline subtructed waveforms with predictions and truth values by looping over
-			      predicted counts from train_count_model.py and using (t0,amplitude) pairs from train_signal_model.py
+plot_individual_waveform.py - Plots baseline subtructed waveforms with predictions and truth values
 
 # open .png files
 
