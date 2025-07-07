@@ -20,9 +20,7 @@ mimeopen -d || gio open
 
 # For Trkhush
 
-If you want the extraction of (t0,amplitude, presense) all in one training file, go to -> tanbranch 
-
-
+# Gna tanbranch stegh aveli hin versiaya: train_cout u train_signal arandzin a, Waveform-nern el edqan realistic chen 
 
 genWave.py - creates waveforms close to reality in folder waveform_raw
 
