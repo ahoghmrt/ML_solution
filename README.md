@@ -20,6 +20,9 @@ mimeopen -d || gio open
 
 # For Trkhush
 
+# If you want the extraction of (t0,amplitude, presense) all in one training file, go to tanbranch
+# Indz lses go to 
+
 genWave.py - creates waveforms close to reality in folder waveform_raw
 
 baseline_subtract.py - removes baselines and saves waveforms in folder waveform_baseline_removed
