@@ -93,6 +93,7 @@ Predict:
 \begin{frame}{Pipeline Overview}
 \centering
 \begin{tikzpicture}[
+  scale=0.72, every node/.style={transform shape},
   node distance=0.6cm and 1.0cm,
   box/.style={rectangle, draw, rounded corners, fill=blue!10,
               minimum width=2.8cm, minimum height=0.8cm, align=center,
@@ -101,15 +102,19 @@ Predict:
                minimum height=0.55cm, align=center, font=\scriptsize},
   arr/.style={-{Stealth[length=3mm]}, thick}
 ]
+  % Row 1: data preparation
   \node[box] (gen)  {1. Generate\\Waveforms};
   \node[box, right=of gen] (base) {2. Subtract\\Baseline};
   \node[box, right=of base] (prep) {3. Prepare\\ML Dataset};
 
+  % Parallel fork
   \node[box, above right=0.4cm and 1.2cm of prep] (count) {4. Train Count\\Model};
   \node[box, below right=0.4cm and 1.2cm of prep] (signal) {5. Train Signal\\Model};
 
-  \node[box, right=2.5cm of prep, yshift=0cm] (compare) {6. Compare\\Predictions};
+  % Merge + evaluation
+  \node[box, right=2.5cm of prep] (compare) {6. Compare\\Predictions};
   \node[box, right=of compare] (plot) {7. Plot\\Waveforms};
+  \node[box, below=0.5cm of plot] (analyze) {8. Error\\Analysis};
 
   \draw[arr] (gen) -- (base);
   \draw[arr] (base) -- (prep);
@@ -118,6 +123,7 @@ Predict:
   \draw[arr] (count) -- (compare);
   \draw[arr] (signal) -- (compare);
   \draw[arr] (compare) -- (plot);
+  \draw[arr] (plot) -- (analyze);
 
   % Data labels
   \node[data, below=0.15cm of gen] {data.npz};
@@ -298,14 +304,9 @@ $\rightarrow$ \texttt{training\_data\_counts.npz}
 \textbf{Evaluation:}
 \begin{itemize}
   \item Accuracy, confusion matrix
-  \item ROC AUC (macro, one-vs-rest)
-  \item PR AUC (macro)
   \item Per-class precision, recall, F1
+  \item ROC \& PR AUC (macro)
 \end{itemize}
-
-\medskip
-\textbf{Input normalization:}\\
-\small StandardScaler on waveform features\\(saved as \texttt{count\_waveform\_scaler.pkl})
 \end{columns}
 \end{frame}
 
@@ -354,13 +355,6 @@ Interleaved $t_0$ and amplitude for up to 7 signals.
   \item Target normalization: separate StandardScalers for $t_0$ and $A$
 \end{itemize}
 
-\medskip
-\textbf{Evaluation:}
-\begin{itemize}
-  \item Per-slot MAE for $t_0$ and amplitude
-  \item RMSE, Pearson \& Spearman correlations
-  \item Per-slot MAE bar plots
-\end{itemize}
 \end{columns}
 \end{frame}
 
@@ -440,6 +434,67 @@ For each waveform in the selected range:
 
 \smallskip
 \small Saved to \texttt{waveform\_inspection/}
+\end{columns}
+\end{frame}
+
+% ============================================================
+\section{Error Analysis}
+
+\begin{frame}[fragile]{Step 8: Error Analysis (\texttt{error\_analysis/analyze.py})}
+
+\textbf{Purpose:} Deep diagnostic analysis of model predictions beyond aggregate metrics.
+
+\medskip
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{Invocation:}
+\begin{lstlisting}[language=bash]
+# Standalone
+python cli.py analyze \
+  --experiment experiments/...
+
+# Auto-runs after run-all
+python cli.py run-all
+\end{lstlisting}
+
+\smallskip
+Loads models, scalers, and training data from working directory; reads experiment config.
+
+\column{0.48\textwidth}
+\textbf{Output:} \texttt{experiment/error\_analysis/}
+\begin{itemize}
+  \item 8 diagnostic plot files (.png)
+  \item \texttt{error\_analysis\_report.json}
+  \item \texttt{summary.pdf} (multi-page compilation)
+\end{itemize}
+
+\smallskip
+Runs all 8 analyses, saves a JSON report with every computed metric, and compiles plots into a single PDF.
+\end{columns}
+\end{frame}
+
+% ============================================================
+\begin{frame}{Error Analysis: Diagnostics}
+
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{Signal regression diagnostics:}
+\begin{enumerate}
+  \item \textbf{Per-slot MAE/RMSE} --- which signal positions are hardest to predict
+  \item \textbf{Error vs count} --- box plots of errors grouped by true signal count
+  \item \textbf{Temporal profile} --- error vs $t_0$ position in the time window
+  \item \textbf{Amplitude dependency} --- error vs true amplitude by quartile
+\end{enumerate}
+
+\column{0.48\textwidth}
+\textbf{Multi-signal \& count diagnostics:}
+\begin{enumerate}
+  \setcounter{enumi}{4}
+  \item \textbf{Spacing analysis} --- error vs min inter-signal distance (overlap effects)
+  \item \textbf{Worst cases} --- top-20 worst waveforms plotted in a 4$\times$5 grid
+  \item \textbf{Count model} --- normalized confusion matrix, per-class accuracy, error distribution
+  \item \textbf{Residual analysis} --- QQ plots, histograms with normal fit, Shapiro-Wilk test
+\end{enumerate}
 \end{columns}
 \end{frame}
 
@@ -552,6 +607,7 @@ experiments/
     training_plots/
     comparison_plots/
     waveform_inspection/
+    error_analysis/
 \end{lstlisting}
 
 \column{0.55\textwidth}
@@ -561,6 +617,7 @@ experiments/
   \item \texttt{metrics.json}: model metrics + per-step timings
   \item \texttt{pipeline.log}: full console log
   \item Copies of all generated plots
+  \item \texttt{error\_analysis/}: diagnostic plots, JSON report, summary PDF
 \end{itemize}
 
 \medskip
