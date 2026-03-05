@@ -12,7 +12,9 @@ training_plots/
 comparison_plots/
 waveform_inspection/
 predictions/
-experiments/
+
+# Experiment tracking (keep results, skip bulky inspection plots)
+experiments/**/waveform_inspection/
 
 # Jupyter
 .ipynb_checkpoints/
