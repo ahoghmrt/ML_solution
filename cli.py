@@ -9,6 +9,7 @@ import shutil
 import sys
 import time
 from datetime import datetime
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,8 @@ def setup_logging(log_file="pipeline.log"):
     console.setFormatter(fmt)
     root.addHandler(console)
 
-    os.makedirs("logs", exist_ok=True)
-    file_handler = logging.FileHandler(os.path.join("logs", log_file))
+    os.makedirs(cfg.DIR_LOGS, exist_ok=True)
+    file_handler = logging.FileHandler(os.path.join(cfg.DIR_LOGS, log_file))
     file_handler.setFormatter(fmt)
     root.addHandler(file_handler)
 
@@ -49,6 +50,7 @@ def cmd_generate(args):
         noise_std=args.noise_std,
         baseline=args.baseline,
         min_spacing=args.min_spacing,
+        max_signals=args.max_signals,
     )
 
 
@@ -104,7 +106,7 @@ def _save_experiment(args, all_metrics, timings, total_time):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = getattr(args, 'experiment_name', None)
     folder_name = f"{timestamp}_{name}" if name else timestamp
-    exp_dir = os.path.join("experiments", folder_name)
+    exp_dir = os.path.join(cfg.DIR_EXPERIMENTS, folder_name)
     os.makedirs(exp_dir, exist_ok=True)
 
     # Save config
@@ -121,13 +123,13 @@ def _save_experiment(args, all_metrics, timings, total_time):
         json.dump(all_metrics, f, indent=2)
 
     # Copy plots
-    for src_dir in ("training_plots", "comparison_plots", "waveform_inspection"):
+    for src_dir in (cfg.DIR_TRAINING_PLOTS, cfg.DIR_COMPARISON_PLOTS, cfg.DIR_WAVEFORM_INSPECTION):
         if os.path.isdir(src_dir):
             dst = os.path.join(exp_dir, src_dir)
             shutil.copytree(src_dir, dst, dirs_exist_ok=True)
 
     # Copy log
-    log_path = os.path.join("logs", "pipeline.log")
+    log_path = os.path.join(cfg.DIR_LOGS, "pipeline.log")
     if os.path.isfile(log_path):
         shutil.copy2(log_path, os.path.join(exp_dir, "pipeline.log"))
 
@@ -138,9 +140,9 @@ def _save_experiment(args, all_metrics, timings, total_time):
 def cmd_run_all(args):
     # Set correct per-step directories so shared args don't conflict
     args.baseline_input_dir = args.output_dir              # waveform_raw
-    args.baseline_output_dir = "waveform_baseline_removed"
-    args.prepare_input_dir = "waveform_baseline_removed"
-    args.prepare_output_dir = "ml_training_data"
+    args.baseline_output_dir = cfg.DIR_BASELINE_REMOVED
+    args.prepare_input_dir = cfg.DIR_BASELINE_REMOVED
+    args.prepare_output_dir = cfg.DIR_ML_DATA
 
     total_t0 = time.time()
     steps = [
@@ -185,41 +187,42 @@ def build_parser():
 
     # generate
     p = subparsers.add_parser("generate", help="Generate synthetic waveforms")
-    p.add_argument("--num-waveforms", type=int, default=50000)
-    p.add_argument("--output-dir", default="waveform_raw")
-    p.add_argument("--noise-std", type=float, default=0.5)
-    p.add_argument("--baseline", type=float, default=200.0)
-    p.add_argument("--min-spacing", type=float, default=0.0001)
+    p.add_argument("--num-waveforms", type=int, default=cfg.NUM_WAVEFORMS)
+    p.add_argument("--output-dir", default=cfg.DIR_RAW)
+    p.add_argument("--noise-std", type=float, default=cfg.NOISE_STD)
+    p.add_argument("--baseline", type=float, default=cfg.BASELINE)
+    p.add_argument("--min-spacing", type=float, default=cfg.MIN_SPACING)
+    p.add_argument("--max-signals", type=int, default=cfg.MAX_SIGNALS)
     p.set_defaults(func=cmd_generate)
 
     # baseline
     p = subparsers.add_parser("baseline", help="Subtract baselines from waveforms")
-    p.add_argument("--input-dir", default="waveform_raw")
-    p.add_argument("--output-dir", default="waveform_baseline_removed")
-    p.add_argument("--window-size", type=int, default=31)
-    p.add_argument("--quantile", type=float, default=0.1)
+    p.add_argument("--input-dir", default=cfg.DIR_RAW)
+    p.add_argument("--output-dir", default=cfg.DIR_BASELINE_REMOVED)
+    p.add_argument("--window-size", type=int, default=cfg.WINDOW_SIZE)
+    p.add_argument("--quantile", type=float, default=cfg.QUANTILE)
     p.set_defaults(func=cmd_baseline)
 
     # prepare
     p = subparsers.add_parser("prepare", help="Create .npz training datasets")
-    p.add_argument("--input-dir", default="waveform_baseline_removed")
-    p.add_argument("--truth-dir", default="waveform_raw")
-    p.add_argument("--output-dir", default="ml_training_data")
-    p.add_argument("--max-signals", type=int, default=7)
+    p.add_argument("--input-dir", default=cfg.DIR_BASELINE_REMOVED)
+    p.add_argument("--truth-dir", default=cfg.DIR_RAW)
+    p.add_argument("--output-dir", default=cfg.DIR_ML_DATA)
+    p.add_argument("--max-signals", type=int, default=cfg.MAX_SIGNALS)
     p.set_defaults(func=cmd_prepare)
 
     # train-count
     p = subparsers.add_parser("train-count", help="Train signal count classifier")
-    p.add_argument("--epochs", type=int, default=40)
-    p.add_argument("--batch-size", type=int, default=128)
-    p.add_argument("--test-size", type=float, default=0.2)
+    p.add_argument("--epochs", type=int, default=cfg.COUNT_MODEL_EPOCHS)
+    p.add_argument("--batch-size", type=int, default=cfg.COUNT_MODEL_BATCH_SIZE)
+    p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)
     p.set_defaults(func=cmd_train_count)
 
     # train-signal
     p = subparsers.add_parser("train-signal", help="Train signal parameter regressor")
-    p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--batch-size", type=int, default=64)
-    p.add_argument("--test-size", type=float, default=0.2)
+    p.add_argument("--epochs", type=int, default=cfg.SIGNAL_MODEL_EPOCHS)
+    p.add_argument("--batch-size", type=int, default=cfg.SIGNAL_MODEL_BATCH_SIZE)
+    p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)
     p.set_defaults(func=cmd_train_signal)
 
     # compare
@@ -228,27 +231,27 @@ def build_parser():
 
     # plot
     p = subparsers.add_parser("plot", help="Plot individual waveforms with predictions")
-    p.add_argument("--start", type=int, default=1)
-    p.add_argument("--end", type=int, default=300)
+    p.add_argument("--start", type=int, default=cfg.PLOT_START)
+    p.add_argument("--end", type=int, default=cfg.PLOT_END)
     p.set_defaults(func=cmd_plot)
 
     # run-all
     p = subparsers.add_parser("run-all", help="Run the full pipeline end-to-end")
-    p.add_argument("--num-waveforms", type=int, default=50000)
-    p.add_argument("--output-dir", default="waveform_raw")
-    p.add_argument("--noise-std", type=float, default=0.5)
-    p.add_argument("--baseline", type=float, default=200.0)
-    p.add_argument("--min-spacing", type=float, default=0.0001)
-    p.add_argument("--input-dir", default="waveform_baseline_removed")
-    p.add_argument("--truth-dir", default="waveform_raw")
-    p.add_argument("--window-size", type=int, default=31)
-    p.add_argument("--quantile", type=float, default=0.1)
-    p.add_argument("--max-signals", type=int, default=7)
-    p.add_argument("--epochs", type=int, default=40)
-    p.add_argument("--batch-size", type=int, default=128)
-    p.add_argument("--test-size", type=float, default=0.2)
-    p.add_argument("--start", type=int, default=1)
-    p.add_argument("--end", type=int, default=300)
+    p.add_argument("--num-waveforms", type=int, default=cfg.NUM_WAVEFORMS)
+    p.add_argument("--output-dir", default=cfg.DIR_RAW)
+    p.add_argument("--noise-std", type=float, default=cfg.NOISE_STD)
+    p.add_argument("--baseline", type=float, default=cfg.BASELINE)
+    p.add_argument("--min-spacing", type=float, default=cfg.MIN_SPACING)
+    p.add_argument("--input-dir", default=cfg.DIR_BASELINE_REMOVED)
+    p.add_argument("--truth-dir", default=cfg.DIR_RAW)
+    p.add_argument("--window-size", type=int, default=cfg.WINDOW_SIZE)
+    p.add_argument("--quantile", type=float, default=cfg.QUANTILE)
+    p.add_argument("--max-signals", type=int, default=cfg.MAX_SIGNALS)
+    p.add_argument("--epochs", type=int, default=cfg.COUNT_MODEL_EPOCHS)
+    p.add_argument("--batch-size", type=int, default=cfg.COUNT_MODEL_BATCH_SIZE)
+    p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)
+    p.add_argument("--start", type=int, default=cfg.PLOT_START)
+    p.add_argument("--end", type=int, default=cfg.PLOT_END)
     p.add_argument("--experiment-name", default=None, help="Optional name for the experiment folder")
     p.set_defaults(func=cmd_run_all)
 

@@ -11,15 +11,16 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from scipy.stats import pearsonr, spearmanr
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
 
-def main(epochs=30, batch_size=64, test_size=0.2):
+def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE):
     # -----------------------------
     # Load Dataset
     # -----------------------------
-    data = np.load("ml_training_data/training_data_signals.npz")
+    data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_signals.npz"))
     X_wave = data["waveforms"]                     # shape: (samples, 120)
     y = data["labels"]                             # shape: (samples, max_signals, 2)
     time = data["time"]
@@ -45,9 +46,9 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     y_flat = y_norm.reshape((y.shape[0], max_signals * 2))
 
     # Save target scalers
-    os.makedirs("training_plots", exist_ok=True)
-    joblib.dump(scaler_t0, "training_plots/t0_scaler.pkl")
-    joblib.dump(scaler_amp, "training_plots/amp_scaler.pkl")
+    os.makedirs(cfg.DIR_TRAINING_PLOTS, exist_ok=True)
+    joblib.dump(scaler_t0, os.path.join(cfg.DIR_TRAINING_PLOTS, "t0_scaler.pkl"))
+    joblib.dump(scaler_amp, os.path.join(cfg.DIR_TRAINING_PLOTS, "amp_scaler.pkl"))
 
     # -----------------------------
     # Normalize inputs (waveforms)
@@ -57,19 +58,17 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     X_wave_scaled = np.expand_dims(X_wave_scaled, axis=-1)
 
     # Save waveform scaler
-    joblib.dump(scaler_wave, "training_plots/waveform_scaler.pkl")
+    joblib.dump(scaler_wave, os.path.join(cfg.DIR_TRAINING_PLOTS, "waveform_scaler.pkl"))
 
 
     input_wave = layers.Input(shape=(X_wave.shape[1], 1), name="waveform_input")
 
     # Conv1D processing
-    x = layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')(input_wave)
-    x = layers.Conv1D(64, kernel_size=5, activation='relu', padding='same')(x)
+    x = layers.Conv1D(cfg.CONV_FILTERS[0], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(input_wave)
+    x = layers.Conv1D(cfg.CONV_FILTERS[1], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(x)
     x = layers.Flatten()(x)
-
-    # Dense processing
-    x = layers.Dense(128, activation='relu')(x)
-    x = layers.Dense(64, activation='relu')(x)
+    x = layers.Dense(cfg.DENSE_UNITS[0], activation='relu')(x)
+    x = layers.Dense(cfg.DENSE_UNITS[1], activation='relu')(x)
     output = layers.Dense(max_signals * 2, name="signal_output")(x)
 
     model = keras.Model(inputs=input_wave, outputs=output)
@@ -81,7 +80,7 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     # Train/Test Split
     # -----------------------------
     X_train, X_val, y_train, y_val = train_test_split(
-        X_wave_scaled, y_flat, test_size=test_size, random_state=42
+        X_wave_scaled, y_flat, test_size=test_size, random_state=cfg.RANDOM_STATE
     )
 
     # -----------------------------
@@ -90,15 +89,15 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     callbacks = [
         keras.callbacks.EarlyStopping(
             monitor='val_mae',
-            patience=6,
+            patience=cfg.EARLY_STOPPING_PATIENCE,
             restore_best_weights=True,
             verbose=1
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
-            factor=0.5,
-            patience=3,
-            min_lr=1e-6,
+            factor=cfg.LR_REDUCE_FACTOR,
+            patience=cfg.LR_REDUCE_PATIENCE,
+            min_lr=cfg.LR_MIN,
             verbose=1
         ),
         keras.callbacks.ModelCheckpoint(
@@ -124,7 +123,7 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     # Save Model and History
     # -----------------------------
     model.save("signal_model.keras")
-    pd.DataFrame(history.history).to_csv("training_plots/signal_model_history.csv", index=False)
+    pd.DataFrame(history.history).to_csv(os.path.join(cfg.DIR_TRAINING_PLOTS, "signal_model_history.csv"), index=False)
 
     # -----------------------------
     # Plot Training History
@@ -138,7 +137,7 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("training_plots/signal_model_training.png")
+    plt.savefig(os.path.join(cfg.DIR_TRAINING_PLOTS, "signal_model_training.png"))
     plt.close()
     logger.info("Saved model to 'signal_model.keras' and training plot")
 
@@ -198,9 +197,9 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     ax2.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("training_plots/signal_model_per_slot_mae.png")
+    plt.savefig(os.path.join(cfg.DIR_TRAINING_PLOTS, "signal_model_per_slot_mae.png"))
     plt.close()
-    logger.info("Saved per-slot MAE plot to 'training_plots/signal_model_per_slot_mae.png'")
+    logger.info(f"Saved per-slot MAE plot to '{cfg.DIR_TRAINING_PLOTS}/signal_model_per_slot_mae.png'")
 
     return {
         't0_mae': float(t0_mae), 't0_rmse': float(t0_rmse),

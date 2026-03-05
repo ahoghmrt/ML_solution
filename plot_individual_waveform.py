@@ -4,30 +4,31 @@ import matplotlib.pyplot as plt
 import os
 from tensorflow import keras
 import joblib
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
 
-def main(start=1, end=300):
+def main(start=cfg.PLOT_START, end=cfg.PLOT_END):
     # ----------------------------
     # Load models and scalers
     # ----------------------------
     signal_model = keras.models.load_model("signal_model.keras")
     count_model = keras.models.load_model("signal_count_model.keras")
-    scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
-    scaler_count_wave = joblib.load("training_plots/count_waveform_scaler.pkl")
-    scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
-    scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
+    scaler_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "waveform_scaler.pkl"))
+    scaler_count_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "count_waveform_scaler.pkl"))
+    scaler_t0 = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "t0_scaler.pkl"))
+    scaler_amp = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "amp_scaler.pkl"))
 
     # ----------------------------
     # Load data
     # ----------------------------
-    data = np.load("ml_training_data/training_data_signals.npz")
+    data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_signals.npz"))
     X = data["waveforms"]
     y_true = data["labels"]
     time = data["time"]
 
-    os.makedirs("waveform_inspection", exist_ok=True)
+    os.makedirs(cfg.DIR_WAVEFORM_INSPECTION, exist_ok=True)
 
     # Normalize waveforms (each model uses its own scaler)
     X_scaled_signal = scaler_wave.transform(X)
@@ -70,11 +71,11 @@ def main(start=1, end=300):
         plt.legend()
         plt.grid(True)
 
-        fname = f"waveform_inspection/waveform_{idx:03d}.png"
+        fname = os.path.join(cfg.DIR_WAVEFORM_INSPECTION, f"waveform_{idx:03d}.png")
         plt.savefig(fname)
         plt.close()
 
-    logger.info(f"Saved {end - start} waveform plots to 'waveform_inspection/'")
+    logger.info(f"Saved {end - start} waveform plots to '{cfg.DIR_WAVEFORM_INSPECTION}/'")
 
 
 if __name__ == "__main__":

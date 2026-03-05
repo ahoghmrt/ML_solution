@@ -12,15 +12,16 @@ from sklearn.metrics import confusion_matrix, classification_report, roc_auc_sco
 from sklearn.preprocessing import label_binarize
 import pandas as pd
 from tensorflow.keras.callbacks import EarlyStopping
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
 
-def main(epochs=40, batch_size=128, test_size=0.2):
+def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE):
     # -----------------------------
     # Load Dataset
     # -----------------------------
-    data = np.load("ml_training_data/training_data_counts.npz")
+    data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_counts.npz"))
     X = data["waveforms"]                      # shape: (samples, 120)
     y = data["labels"]                         # shape: (samples,)
     time = data["time"]
@@ -36,8 +37,8 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     X_scaled = np.expand_dims(X_scaled, axis=-1)
 
     # Save waveform scaler for inference
-    os.makedirs("training_plots", exist_ok=True)
-    joblib.dump(scaler, "training_plots/count_waveform_scaler.pkl")
+    os.makedirs(cfg.DIR_TRAINING_PLOTS, exist_ok=True)
+    joblib.dump(scaler, os.path.join(cfg.DIR_TRAINING_PLOTS, "count_waveform_scaler.pkl"))
 
     # -----------------------------
     # Build Model (Model = CONV, Input = waveform, Output = signal count class)
@@ -45,20 +46,15 @@ def main(epochs=40, batch_size=128, test_size=0.2):
 
     input_layer = layers.Input(shape=(X.shape[1], 1), name="waveform_input")
 
-    # Two Conv1D Layers
-    x = layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')(input_layer)
-    x = layers.Conv1D(64, kernel_size=5, activation='relu', padding='same')(x)
-
-    # Flatten preserves all learned features
+    x = layers.Conv1D(cfg.CONV_FILTERS[0], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(input_layer)
+    x = layers.Conv1D(cfg.CONV_FILTERS[1], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(x)
     x = layers.Flatten()(x)
+    x = layers.Dense(cfg.DENSE_UNITS[0], activation='relu')(x)
+    x = layers.Dropout(cfg.DROPOUT_RATE)(x)
+    x = layers.Dense(cfg.DENSE_UNITS[1], activation='relu')(x)
 
-    # Dense Block
-    x = layers.Dense(128, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)
-    x = layers.Dense(64, activation='relu')(x)
-
-    # Output for classification (0 to 6)
-    output = layers.Dense(7, activation='softmax', name="count_output")(x)
+    num_classes = len(cfg.SIGNAL_COUNTS)
+    output = layers.Dense(num_classes, activation='softmax', name="count_output")(x)
 
     model = models.Model(inputs=input_layer, outputs=output)
     model.compile(
@@ -73,7 +69,7 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     # Train/Test Split
     # -----------------------------
     X_train, X_val, y_train, y_val = train_test_split(
-        X_scaled, y, test_size=test_size, random_state=42
+        X_scaled, y, test_size=test_size, random_state=cfg.RANDOM_STATE
     )
 
     # -----------------------------
@@ -82,15 +78,15 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     callbacks = [
         keras.callbacks.EarlyStopping(
             monitor='val_accuracy',
-            patience=6,
+            patience=cfg.EARLY_STOPPING_PATIENCE,
             restore_best_weights=True,
             verbose=1
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
-            factor=0.5,
-            patience=3,
-            min_lr=1e-6,
+            factor=cfg.LR_REDUCE_FACTOR,
+            patience=cfg.LR_REDUCE_PATIENCE,
+            min_lr=cfg.LR_MIN,
             verbose=1
         ),
         keras.callbacks.ModelCheckpoint(
@@ -115,9 +111,9 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     # -----------------------------
     # Save Model and History
     # -----------------------------
-    os.makedirs("training_plots", exist_ok=True)
+    os.makedirs(cfg.DIR_TRAINING_PLOTS, exist_ok=True)
     model.save("signal_count_model.keras")
-    pd.DataFrame(history.history).to_csv("training_plots/signal_count_model_history.csv", index=False)
+    pd.DataFrame(history.history).to_csv(os.path.join(cfg.DIR_TRAINING_PLOTS, "signal_count_model_history.csv"), index=False)
 
     # -----------------------------
     # Plot Training History
@@ -131,7 +127,7 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("training_plots/signal_count_model_training.png")
+    plt.savefig(os.path.join(cfg.DIR_TRAINING_PLOTS, "signal_count_model_training.png"))
     plt.close()
     logger.info("Saved model to 'signal_count_model.keras' and training plot")
 
@@ -147,7 +143,7 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     logger.info(f"Classification Report:\n{report}")
 
     # ROC AUC and PR AUC (one-vs-rest)
-    classes = np.arange(7)
+    classes = np.arange(len(cfg.SIGNAL_COUNTS))
     y_val_bin = label_binarize(y_val, classes=classes)
     present_classes = [c for c in classes if c in y_val]
     if len(present_classes) > 1:
@@ -170,14 +166,14 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     ax.set_xticks(classes)
     ax.set_yticks(classes)
     plt.colorbar(im, ax=ax)
-    for i in range(7):
-        for j in range(7):
+    for i in range(len(cfg.SIGNAL_COUNTS)):
+        for j in range(len(cfg.SIGNAL_COUNTS)):
             ax.text(j, i, str(cm[i, j]), ha='center', va='center',
                     color='white' if cm[i, j] > cm.max() / 2 else 'black')
     plt.tight_layout()
-    plt.savefig("training_plots/count_model_confusion_matrix.png")
+    plt.savefig(os.path.join(cfg.DIR_TRAINING_PLOTS, "count_model_confusion_matrix.png"))
     plt.close()
-    logger.info("Saved confusion matrix to 'training_plots/count_model_confusion_matrix.png'")
+    logger.info(f"Saved confusion matrix to '{cfg.DIR_TRAINING_PLOTS}/count_model_confusion_matrix.png'")
 
     return {
         'accuracy': float(val_accuracy),

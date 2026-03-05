@@ -7,6 +7,7 @@ import joblib
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.metrics import confusion_matrix, accuracy_score
 from scipy.stats import pearsonr, spearmanr
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +22,21 @@ def main():
     # ----------------------------
     # Load data
     # ----------------------------
-    data = np.load("ml_training_data/training_data_signals.npz")
+    data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_signals.npz"))
     X = data["waveforms"]           # (samples, 120)
     y_true = data["labels"]         # (samples, max_signals, 2)
     time = data["time"]
 
-    count_data = np.load("ml_training_data/training_data_counts.npz")
+    count_data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_counts.npz"))
     y_true_counts = count_data["labels"]  # (samples,)
 
     # ----------------------------
     # Load scalers for inverse transform
     # ----------------------------
-    scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
-    scaler_count_wave = joblib.load("training_plots/count_waveform_scaler.pkl")
-    scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
-    scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
+    scaler_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "waveform_scaler.pkl"))
+    scaler_count_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "count_waveform_scaler.pkl"))
+    scaler_t0 = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "t0_scaler.pkl"))
+    scaler_amp = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "amp_scaler.pkl"))
 
     # ----------------------------
     # Normalize inputs using saved scalers
@@ -133,7 +134,7 @@ def main():
     # ----------------------------
     # Plot scatter comparisons
     # ----------------------------
-    os.makedirs("comparison_plots", exist_ok=True)
+    os.makedirs(cfg.DIR_COMPARISON_PLOTS, exist_ok=True)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -156,7 +157,7 @@ def main():
     ax2.grid(True)
 
     plt.tight_layout()
-    plt.savefig("comparison_plots/t0_comparison_combined.png")
+    plt.savefig(os.path.join(cfg.DIR_COMPARISON_PLOTS, "t0_comparison_combined.png"))
     plt.close()
 
     # ----------------------------------------------
@@ -182,27 +183,28 @@ def main():
     ax2.grid(True)
 
     plt.tight_layout()
-    plt.savefig("comparison_plots/amplitude_comparison_combined.png")
+    plt.savefig(os.path.join(cfg.DIR_COMPARISON_PLOTS, "amplitude_comparison_combined.png"))
     plt.close()
 
     # ----------------------------
     # Count Model Confusion Matrix
     # ----------------------------
-    cm = confusion_matrix(y_true_counts, pred_counts, labels=np.arange(7))
+    num_classes = len(cfg.SIGNAL_COUNTS)
+    cm = confusion_matrix(y_true_counts, pred_counts, labels=np.arange(num_classes))
     fig, ax = plt.subplots(figsize=(8, 6))
     im = ax.imshow(cm, interpolation='nearest', cmap='Blues')
     ax.set_title("Count Model Confusion Matrix")
     ax.set_xlabel("Predicted Count")
     ax.set_ylabel("True Count")
-    ax.set_xticks(np.arange(7))
-    ax.set_yticks(np.arange(7))
+    ax.set_xticks(np.arange(num_classes))
+    ax.set_yticks(np.arange(num_classes))
     plt.colorbar(im, ax=ax)
-    for i in range(7):
-        for j in range(7):
+    for i in range(num_classes):
+        for j in range(num_classes):
             ax.text(j, i, str(cm[i, j]), ha='center', va='center',
                     color='white' if cm[i, j] > cm.max() / 2 else 'black')
     plt.tight_layout()
-    plt.savefig("comparison_plots/count_confusion_matrix.png")
+    plt.savefig(os.path.join(cfg.DIR_COMPARISON_PLOTS, "count_confusion_matrix.png"))
     plt.close()
 
     logger.info(f"Comparison plots saved ({len(pred_t0s_all)} signal pairs, "

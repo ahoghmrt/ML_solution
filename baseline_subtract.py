@@ -1,8 +1,8 @@
 import numpy as np
 import os
 import pandas as pd
-from glob import glob
 import logging
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
@@ -18,40 +18,32 @@ def rolling_quantile_baseline(waveform, window_size=31, quantile=0.1):
 # -------------------------------
 # Baseline Subtraction
 # -------------------------------
-def subtract_baseline(input_dir="waveform_raw", output_dir="waveform_baseline_removed", window_size=31, quantile=0.1):
+def subtract_baseline(input_dir=cfg.DIR_RAW, output_dir=cfg.DIR_BASELINE_REMOVED, window_size=cfg.WINDOW_SIZE, quantile=cfg.QUANTILE):
     os.makedirs(output_dir, exist_ok=True)
-    waveform_files = sorted(glob(os.path.join(input_dir, "waveform_*.txt")))
-    logger.info(f"Processing {len(waveform_files)} waveforms (window={window_size}, quantile={quantile})")
 
-    for i, wf_file in enumerate(waveform_files):
-        # Load waveform
-        data = np.loadtxt(wf_file, skiprows=1)
-        time = data[:, 0]
-        waveform = data[:, 1]
+    data = np.load(os.path.join(input_dir, "data.npz"))
+    waveforms = data["waveforms"]
+    time = data["time"]
 
-        # Apply baseline subtraction
-        baseline = rolling_quantile_baseline(waveform, window_size, quantile)
-        waveform_subtracted = waveform - baseline
+    n = len(waveforms)
+    logger.info(f"Processing {n} waveforms (window={window_size}, quantile={quantile})")
 
-        # Save result
-        basename = os.path.basename(wf_file)
-        output_file = os.path.join(output_dir, basename)
-        np.savetxt(output_file, np.column_stack((time, waveform_subtracted)),
-                   header="Time(ns)\tAmplitude", fmt="%.2f")
+    subtracted = np.empty_like(waveforms)
+    for i in range(n):
+        baseline = rolling_quantile_baseline(waveforms[i], window_size, quantile)
+        subtracted[i] = waveforms[i] - baseline
 
-        if (i + 1) % 100 == 0 or (i + 1) == len(waveform_files):
-            logger.debug(f"Processed {i + 1}/{len(waveform_files)} waveforms")
+        if (i + 1) % 100 == 0 or (i + 1) == n:
+            logger.debug(f"Processed {i + 1}/{n} waveforms")
 
-    logger.info(f"Baseline subtracted for {len(waveform_files)} waveforms into '{output_dir}/'")
+    np.savez(os.path.join(output_dir, "data.npz"),
+             waveforms=subtracted,
+             time=time)
+
+    logger.info(f"Baseline subtracted for {n} waveforms into '{output_dir}/'")
 
 # -------------------------------
 # RUN SCRIPT
 # -------------------------------
 if __name__ == "__main__":
-    subtract_baseline(
-        input_dir="waveform_raw",
-        output_dir="waveform_baseline_removed",
-        window_size=31,
-        quantile=0.1
-    )
-
+    subtract_baseline()
