@@ -71,6 +71,7 @@ def generate_waveform(n_signals=None, noise_std=None, min_spacing=10, random_see
 # -------------------------------
 def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.5, baseline=200.0, min_spacing=10):
     os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Generating {num_waveforms} waveforms into '{output_dir}/'")
     for i in range(num_waveforms):
         waveform, signal_truth, n_signals = generate_waveform(
             n_signals=None,
@@ -92,7 +93,10 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
                 f.write(f"{idx}\t{t0:.2f}\t{amp:.2f}\n")
             f.write(f"Number of Signals: {n_signals}\n")
 
-        logger.info(f"Saved: {wf_file}, {truth_file}")
+        if (i + 1) % 100 == 0 or (i + 1) == num_waveforms:
+            logger.debug(f"Generated {i + 1}/{num_waveforms} waveforms")
+
+    logger.info(f"Generated {num_waveforms} waveforms in '{output_dir}/'")
 
 # -------------------------------
 # RUN SCRIPT

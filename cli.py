@@ -30,7 +30,7 @@ def setup_logging(log_file="pipeline.log"):
 
 def _timed(label, func, *a, **kw):
     """Run func and log elapsed time."""
-    logger.info(f"Starting: {label}")
+    logger.debug(f"Starting: {label}")
     t0 = time.time()
     result = func(*a, **kw)
     elapsed = time.time() - t0
@@ -51,9 +51,11 @@ def cmd_generate(args):
 
 def cmd_baseline(args):
     from baseline_subtract import subtract_baseline
+    input_dir = getattr(args, 'baseline_input_dir', None) or args.input_dir
+    output_dir = getattr(args, 'baseline_output_dir', None) or args.output_dir
     _timed("baseline subtraction", subtract_baseline,
-        input_dir=args.input_dir,
-        output_dir=args.output_dir,
+        input_dir=input_dir,
+        output_dir=output_dir,
         window_size=args.window_size,
         quantile=args.quantile,
     )
@@ -61,10 +63,12 @@ def cmd_baseline(args):
 
 def cmd_prepare(args):
     from prepare_ml_dataset import main
+    input_dir = getattr(args, 'prepare_input_dir', None) or args.input_dir
+    output_dir = getattr(args, 'prepare_output_dir', None) or args.output_dir
     _timed("prepare dataset", main,
-        input_dir=args.input_dir,
+        input_dir=input_dir,
         truth_dir=args.truth_dir,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         max_signals=args.max_signals,
     )
 
@@ -93,6 +97,12 @@ def cmd_plot(args):
 
 
 def cmd_run_all(args):
+    # Set correct per-step directories so shared args don't conflict
+    args.baseline_input_dir = args.output_dir              # waveform_raw
+    args.baseline_output_dir = "waveform_baseline_removed"
+    args.prepare_input_dir = "waveform_baseline_removed"
+    args.prepare_output_dir = "ml_training_data"
+
     total_t0 = time.time()
     steps = [
         ("Step 1/7: Generating waveforms", cmd_generate),
@@ -208,7 +218,11 @@ def main():
         sys.exit(1)
 
     setup_logging()
-    args.func(args)
+    try:
+        args.func(args)
+    except Exception:
+        logger.exception("Pipeline failed")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

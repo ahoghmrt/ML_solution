@@ -98,8 +98,6 @@ def main():
 
     plt.tight_layout()
     plt.savefig("comparison_plots/t0_comparison_combined.png")
-    if os.environ.get("DISPLAY"):
-        plt.show()
     plt.close()
 
     # ----------------------------------------------
@@ -126,11 +124,9 @@ def main():
 
     plt.tight_layout()
     plt.savefig("comparison_plots/amplitude_comparison_combined.png")
-    if os.environ.get("DISPLAY"):
-        plt.show()
     plt.close()
 
-    logger.info("Hexbin plots and delta histograms saved in 'comparison_plots/' folder.")
+    logger.info(f"Comparison plots saved in 'comparison_plots/' ({len(pred_t0s_all)} signal pairs compared)")
 
 
 if __name__ == "__main__":

@@ -21,8 +21,9 @@ def rolling_quantile_baseline(waveform, window_size=31, quantile=0.1):
 def subtract_baseline(input_dir="waveform_raw", output_dir="waveform_baseline_removed", window_size=31, quantile=0.1):
     os.makedirs(output_dir, exist_ok=True)
     waveform_files = sorted(glob(os.path.join(input_dir, "waveform_*.txt")))
+    logger.info(f"Processing {len(waveform_files)} waveforms (window={window_size}, quantile={quantile})")
 
-    for wf_file in waveform_files:
+    for i, wf_file in enumerate(waveform_files):
         # Load waveform
         data = np.loadtxt(wf_file, skiprows=1)
         time = data[:, 0]
@@ -38,7 +39,10 @@ def subtract_baseline(input_dir="waveform_raw", output_dir="waveform_baseline_re
         np.savetxt(output_file, np.column_stack((time, waveform_subtracted)),
                    header="Time(ns)\tAmplitude", fmt="%.2f")
 
-        logger.info(f"Baseline removed and saved: {output_file}")
+        if (i + 1) % 100 == 0 or (i + 1) == len(waveform_files):
+            logger.debug(f"Processed {i + 1}/{len(waveform_files)} waveforms")
+
+    logger.info(f"Baseline subtracted for {len(waveform_files)} waveforms into '{output_dir}/'")
 
 # -------------------------------
 # RUN SCRIPT

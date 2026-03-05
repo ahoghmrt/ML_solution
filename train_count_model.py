@@ -22,8 +22,8 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     y = data["labels"]                         # shape: (samples,)
     time = data["time"]
 
-    logger.info(f"Loaded: {X.shape[0]} waveforms with {X.shape[1]} time bins")
-    logger.info(f"Label shape (signal counts): {y.shape}")
+    logger.info(f"Loaded {X.shape[0]} waveforms ({X.shape[1]} time bins)")
+    logger.debug(f"Label shape: {y.shape}")
 
     # -----------------------------
     # Normalize Inputs
@@ -124,9 +124,8 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     plt.grid(True)
     plt.tight_layout()
     plt.savefig("training_plots/signal_count_model_training.png")
-    if os.environ.get("DISPLAY"):
-        plt.show()
     plt.close()
+    logger.info("Saved model to 'signal_count_model.keras' and training plot")
 
 
 if __name__ == "__main__":

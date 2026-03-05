@@ -24,8 +24,8 @@ def main(epochs=30, batch_size=64, test_size=0.2):
 
     max_signals = y.shape[1]
 
-    logger.info(f"Loaded dataset: {X_wave.shape[0]} samples, each with {X_wave.shape[1]} time bins")
-    logger.info(f"Label shape (t0, A): {y.shape}, Time shape: {time.shape}")
+    logger.info(f"Loaded {X_wave.shape[0]} waveforms ({X_wave.shape[1]} time bins, max_signals={max_signals})")
+    logger.debug(f"Label shape: {y.shape}, Time shape: {time.shape}")
 
     # -----------------------------
     # Normalize targets (t0 and amplitude separately)
@@ -137,9 +137,8 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     plt.grid(True)
     plt.tight_layout()
     plt.savefig("training_plots/signal_model_training.png")
-    if os.environ.get("DISPLAY"):
-        plt.show()
     plt.close()
+    logger.info("Saved model to 'signal_model.keras' and training plot")
 
 
 if __name__ == "__main__":

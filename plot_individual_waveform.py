@@ -72,7 +72,7 @@ def main(start=1, end=300):
         plt.savefig(fname)
         plt.close()
 
-    logger.info(f"Saved {end - start} waveform plots in 'waveform_inspection/' folder.")
+    logger.info(f"Saved {end - start} waveform plots to 'waveform_inspection/'")
 
 
 if __name__ == "__main__":
