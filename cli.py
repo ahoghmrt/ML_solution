@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,19 @@ def setup_logging(log_file="pipeline.log"):
     root.addHandler(file_handler)
 
 
+def _timed(label, func, *a, **kw):
+    """Run func and log elapsed time."""
+    logger.info(f"Starting: {label}")
+    t0 = time.time()
+    result = func(*a, **kw)
+    elapsed = time.time() - t0
+    logger.info(f"Finished: {label} ({elapsed:.1f}s)")
+    return result
+
+
 def cmd_generate(args):
     from genWave import generate_dataset
-    generate_dataset(
+    _timed("generate waveforms", generate_dataset,
         num_waveforms=args.num_waveforms,
         output_dir=args.output_dir,
         noise_std=args.noise_std,
@@ -40,7 +51,7 @@ def cmd_generate(args):
 
 def cmd_baseline(args):
     from baseline_subtract import subtract_baseline
-    subtract_baseline(
+    _timed("baseline subtraction", subtract_baseline,
         input_dir=args.input_dir,
         output_dir=args.output_dir,
         window_size=args.window_size,
@@ -50,7 +61,7 @@ def cmd_baseline(args):
 
 def cmd_prepare(args):
     from prepare_ml_dataset import main
-    main(
+    _timed("prepare dataset", main,
         input_dir=args.input_dir,
         truth_dir=args.truth_dir,
         output_dir=args.output_dir,
@@ -60,25 +71,29 @@ def cmd_prepare(args):
 
 def cmd_train_count(args):
     from train_count_model import main
-    main(epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
+    _timed("train count model", main,
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
 
 
 def cmd_train_signal(args):
     from train_signal_model import main
-    main(epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
+    _timed("train signal model", main,
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
 
 
 def cmd_compare(args):
     from compare_signal_predictions import main
-    main()
+    _timed("compare predictions", main)
 
 
 def cmd_plot(args):
     from plot_individual_waveform import main
-    main(start=args.start, end=args.end)
+    _timed("plot individual waveforms", main,
+        start=args.start, end=args.end)
 
 
 def cmd_run_all(args):
+    total_t0 = time.time()
     steps = [
         ("Step 1/7: Generating waveforms", cmd_generate),
         ("Step 2/7: Subtracting baselines", cmd_baseline),
@@ -88,13 +103,22 @@ def cmd_run_all(args):
         ("Step 6/7: Comparing predictions", cmd_compare),
         ("Step 7/7: Plotting individual waveforms", cmd_plot),
     ]
+    timings = []
     for msg, func in steps:
         logger.info("=" * 50)
         logger.info(msg)
         logger.info("=" * 50)
+        t0 = time.time()
         func(args)
+        timings.append((msg, time.time() - t0))
 
-    logger.info("Full pipeline complete!")
+    total = time.time() - total_t0
+    logger.info("=" * 50)
+    logger.info("Pipeline timing summary:")
+    for msg, elapsed in timings:
+        logger.info(f"  {msg}: {elapsed:.1f}s")
+    logger.info(f"  Total: {total:.1f}s")
+    logger.info("=" * 50)
 
 
 def build_parser():

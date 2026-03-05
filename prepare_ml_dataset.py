@@ -64,12 +64,8 @@ def main(input_dir="waveform_baseline_removed", truth_dir="waveform_raw", output
 
     logger.info("Saved training_data_signals.npz (for t0, amplitude regression)")
     logger.info("Saved training_data_counts.npz (for signal count classification)")
-
-    data_signals = np.load(os.path.join(output_dir, "training_data_signals.npz"))
-    logger.info(f"Signals - waveforms: {data_signals['waveforms'].shape}, labels: {data_signals['labels'].shape}, time: {data_signals['time'].shape}")
-
-    data_counts = np.load(os.path.join(output_dir, "training_data_counts.npz"))
-    logger.info(f"Counts - waveforms: {data_counts['waveforms'].shape}, labels: {data_counts['labels'].shape}, time: {data_counts['time'].shape}")
+    logger.info(f"Signals - waveforms: {waveforms.shape}, labels: {labels_regression.shape}, time: {time.shape}")
+    logger.info(f"Counts - waveforms: {waveforms.shape}, labels: {labels_count.shape}, time: {time.shape}")
 
 
 if __name__ == "__main__":
