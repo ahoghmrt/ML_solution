@@ -9,129 +9,135 @@ import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
 
-# -----------------------------
-# Load Dataset
-# -----------------------------
-data = np.load("ml_training_data/training_data_signals.npz")
-X_wave = data["waveforms"]                     # shape: (samples, 120)
-y = data["labels"]                             # shape: (samples, max_signals, 2)
-time = data["time"]
 
-max_signals = y.shape[1]
+def main(epochs=30, batch_size=64, test_size=0.2):
+    # -----------------------------
+    # Load Dataset
+    # -----------------------------
+    data = np.load("ml_training_data/training_data_signals.npz")
+    X_wave = data["waveforms"]                     # shape: (samples, 120)
+    y = data["labels"]                             # shape: (samples, max_signals, 2)
+    time = data["time"]
 
-print(f"✅ Loaded dataset: {X_wave.shape[0]} samples, each with {X_wave.shape[1]} time bins")
-print(f"✅ Label shape (t0, A): {y.shape}, Time shape: {time.shape}")
+    max_signals = y.shape[1]
 
-# -----------------------------
-# Normalize targets (t0 and amplitude separately)
-# -----------------------------
-t0s = y[:, :, 0]
-amps = y[:, :, 1]
+    print(f"✅ Loaded dataset: {X_wave.shape[0]} samples, each with {X_wave.shape[1]} time bins")
+    print(f"✅ Label shape (t0, A): {y.shape}, Time shape: {time.shape}")
 
-scaler_t0 = StandardScaler()
-scaler_amp = StandardScaler()
+    # -----------------------------
+    # Normalize targets (t0 and amplitude separately)
+    # -----------------------------
+    t0s = y[:, :, 0]
+    amps = y[:, :, 1]
 
-t0s_norm = scaler_t0.fit_transform(t0s)
-amps_norm = scaler_amp.fit_transform(amps)
+    scaler_t0 = StandardScaler()
+    scaler_amp = StandardScaler()
 
-y_norm = np.stack([t0s_norm, amps_norm], axis=-1)
-y_flat = y_norm.reshape((y.shape[0], max_signals * 2))
+    t0s_norm = scaler_t0.fit_transform(t0s)
+    amps_norm = scaler_amp.fit_transform(amps)
 
-# Save target scalers
-os.makedirs("training_plots", exist_ok=True)
-joblib.dump(scaler_t0, "training_plots/t0_scaler.pkl")
-joblib.dump(scaler_amp, "training_plots/amp_scaler.pkl")
+    y_norm = np.stack([t0s_norm, amps_norm], axis=-1)
+    y_flat = y_norm.reshape((y.shape[0], max_signals * 2))
 
-# -----------------------------
-# Normalize inputs (waveforms)
-# -----------------------------
-scaler_wave = StandardScaler()
-X_wave_scaled = scaler_wave.fit_transform(X_wave)
-X_wave_scaled = np.expand_dims(X_wave_scaled, axis=-1)
+    # Save target scalers
+    os.makedirs("training_plots", exist_ok=True)
+    joblib.dump(scaler_t0, "training_plots/t0_scaler.pkl")
+    joblib.dump(scaler_amp, "training_plots/amp_scaler.pkl")
 
-# Save waveform scaler
-joblib.dump(scaler_wave, "training_plots/waveform_scaler.pkl")
+    # -----------------------------
+    # Normalize inputs (waveforms)
+    # -----------------------------
+    scaler_wave = StandardScaler()
+    X_wave_scaled = scaler_wave.fit_transform(X_wave)
+    X_wave_scaled = np.expand_dims(X_wave_scaled, axis=-1)
 
-
-input_wave = layers.Input(shape=(X_wave.shape[1], 1), name="waveform_input")
-
-# Conv1D processing
-x = layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')(input_wave)
-x = layers.Conv1D(64, kernel_size=5, activation='relu', padding='same')(x)
-x = layers.Flatten()(x)
-
-# Dense processing
-x = layers.Dense(128, activation='relu')(x)
-x = layers.Dense(64, activation='relu')(x)
-output = layers.Dense(max_signals * 2, name="signal_output")(x)
-
-model = keras.Model(inputs=input_wave, outputs=output)
-model.compile(optimizer='adam', loss='mae', metrics=['mae'])
-model.summary()
+    # Save waveform scaler
+    joblib.dump(scaler_wave, "training_plots/waveform_scaler.pkl")
 
 
-# -----------------------------
-# Train/Test Split
-# -----------------------------
-X_train, X_val, y_train, y_val = train_test_split(
-    X_wave_scaled, y_flat, test_size=0.2, random_state=42
-)
+    input_wave = layers.Input(shape=(X_wave.shape[1], 1), name="waveform_input")
 
-# -----------------------------
-# Callbacks
-# -----------------------------
-callbacks = [
-    keras.callbacks.EarlyStopping(
-        monitor='val_mae',
-        patience=6,
-        restore_best_weights=True,
-        verbose=1
-    ),
-    keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss',
-        factor=0.5,
-        patience=3,
-        min_lr=1e-6,
-        verbose=1
-    ),
-    keras.callbacks.ModelCheckpoint(
-        filepath='best_signal_model.keras',
-        monitor='val_mae',
-        save_best_only=True,
-        verbose=1
+    # Conv1D processing
+    x = layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')(input_wave)
+    x = layers.Conv1D(64, kernel_size=5, activation='relu', padding='same')(x)
+    x = layers.Flatten()(x)
+
+    # Dense processing
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dense(64, activation='relu')(x)
+    output = layers.Dense(max_signals * 2, name="signal_output")(x)
+
+    model = keras.Model(inputs=input_wave, outputs=output)
+    model.compile(optimizer='adam', loss='mae', metrics=['mae'])
+    model.summary()
+
+
+    # -----------------------------
+    # Train/Test Split
+    # -----------------------------
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_wave_scaled, y_flat, test_size=test_size, random_state=42
     )
-]
 
-# -----------------------------
-# Train
-# -----------------------------
-history = model.fit(
-    X_train, y_train,
-    validation_data=(X_val, y_val),
-    epochs=30,
-    batch_size=64,
-    callbacks=callbacks
-)
+    # -----------------------------
+    # Callbacks
+    # -----------------------------
+    callbacks = [
+        keras.callbacks.EarlyStopping(
+            monitor='val_mae',
+            patience=6,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=3,
+            min_lr=1e-6,
+            verbose=1
+        ),
+        keras.callbacks.ModelCheckpoint(
+            filepath='best_signal_model.keras',
+            monitor='val_mae',
+            save_best_only=True,
+            verbose=1
+        )
+    ]
 
-# -----------------------------
-# Save Model and History
-# -----------------------------
-model.save("signal_model.keras")
-pd.DataFrame(history.history).to_csv("training_plots/signal_model_history.csv", index=False)
+    # -----------------------------
+    # Train
+    # -----------------------------
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        callbacks=callbacks
+    )
 
-# -----------------------------
-# Plot Training History
-# -----------------------------
-plt.figure(figsize=(8, 5))
-plt.plot(history.history['loss'], label='Train Loss (MAE)')
-plt.plot(history.history['val_loss'], label='Val Loss (MAE)')
-plt.title("Signal Model Training")
-plt.xlabel("Epoch")
-plt.ylabel("Loss (MAE)")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.savefig("training_plots/signal_model_training.png")
-if os.environ.get("DISPLAY"):
-    plt.show()
-plt.close()
+    # -----------------------------
+    # Save Model and History
+    # -----------------------------
+    model.save("signal_model.keras")
+    pd.DataFrame(history.history).to_csv("training_plots/signal_model_history.csv", index=False)
+
+    # -----------------------------
+    # Plot Training History
+    # -----------------------------
+    plt.figure(figsize=(8, 5))
+    plt.plot(history.history['loss'], label='Train Loss (MAE)')
+    plt.plot(history.history['val_loss'], label='Val Loss (MAE)')
+    plt.title("Signal Model Training")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (MAE)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("training_plots/signal_model_training.png")
+    if os.environ.get("DISPLAY"):
+        plt.show()
+    plt.close()
+
+
+if __name__ == "__main__":
+    main()

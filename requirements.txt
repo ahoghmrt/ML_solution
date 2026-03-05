@@ -1,7 +1,7 @@
-tensorflow
-scikit-learn
-numpy
-matplotlib
-pandas
-joblib
-scipy
+tensorflow==2.19.0
+scikit-learn==1.5.0
+numpy==2.0.0
+matplotlib==3.9.0
+pandas==2.2.3
+joblib==1.4.2
+scipy==1.13.1
