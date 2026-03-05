@@ -9,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from scipy.stats import pearsonr, spearmanr
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,73 @@ def main(epochs=30, batch_size=64, test_size=0.2):
     plt.savefig("training_plots/signal_model_training.png")
     plt.close()
     logger.info("Saved model to 'signal_model.keras' and training plot")
+
+    # -----------------------------
+    # Final Evaluation on Validation Set
+    # -----------------------------
+    y_val_pred = model.predict(X_val)
+
+    t0_idx = list(range(0, max_signals * 2, 2))
+    amp_idx = list(range(1, max_signals * 2, 2))
+
+    # Inverse-transform to original scale
+    y_val_t0 = scaler_t0.inverse_transform(y_val[:, t0_idx])
+    y_val_amp = scaler_amp.inverse_transform(y_val[:, amp_idx])
+    y_pred_t0 = scaler_t0.inverse_transform(y_val_pred[:, t0_idx])
+    y_pred_amp = scaler_amp.inverse_transform(y_val_pred[:, amp_idx])
+
+    t0_mae = mean_absolute_error(y_val_t0, y_pred_t0)
+    amp_mae = mean_absolute_error(y_val_amp, y_pred_amp)
+    t0_rmse = np.sqrt(mean_squared_error(y_val_t0, y_pred_t0))
+    amp_rmse = np.sqrt(mean_squared_error(y_val_amp, y_pred_amp))
+
+    t0_pearson, _ = pearsonr(y_val_t0.ravel(), y_pred_t0.ravel())
+    t0_spearman, _ = spearmanr(y_val_t0.ravel(), y_pred_t0.ravel())
+    amp_pearson, _ = pearsonr(y_val_amp.ravel(), y_pred_amp.ravel())
+    amp_spearman, _ = spearmanr(y_val_amp.ravel(), y_pred_amp.ravel())
+
+    logger.info(f"t0  - MAE: {t0_mae:.4f} ns, RMSE: {t0_rmse:.4f} ns, "
+                f"Pearson: {t0_pearson:.4f}, Spearman: {t0_spearman:.4f}")
+    logger.info(f"amp - MAE: {amp_mae:.4f}, RMSE: {amp_rmse:.4f}, "
+                f"Pearson: {amp_pearson:.4f}, Spearman: {amp_spearman:.4f}")
+
+    # Per-signal-slot MAE
+    per_slot_t0_mae = []
+    per_slot_amp_mae = []
+    for s in range(max_signals):
+        slot_t0 = mean_absolute_error(y_val_t0[:, s], y_pred_t0[:, s])
+        slot_amp = mean_absolute_error(y_val_amp[:, s], y_pred_amp[:, s])
+        per_slot_t0_mae.append(slot_t0)
+        per_slot_amp_mae.append(slot_amp)
+        logger.debug(f"  Slot {s}: t0 MAE = {slot_t0:.4f} ns, amp MAE = {slot_amp:.4f}")
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    slots = np.arange(max_signals)
+    ax1.bar(slots, per_slot_t0_mae, color='steelblue', edgecolor='black')
+    ax1.set_xlabel("Signal Slot")
+    ax1.set_ylabel("MAE (ns)")
+    ax1.set_title("Per-Slot t0 MAE")
+    ax1.set_xticks(slots)
+    ax1.grid(axis='y', alpha=0.3)
+
+    ax2.bar(slots, per_slot_amp_mae, color='salmon', edgecolor='black')
+    ax2.set_xlabel("Signal Slot")
+    ax2.set_ylabel("MAE")
+    ax2.set_title("Per-Slot Amplitude MAE")
+    ax2.set_xticks(slots)
+    ax2.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("training_plots/signal_model_per_slot_mae.png")
+    plt.close()
+    logger.info("Saved per-slot MAE plot to 'training_plots/signal_model_per_slot_mae.png'")
+
+    return {
+        't0_mae': float(t0_mae), 't0_rmse': float(t0_rmse),
+        't0_pearson': float(t0_pearson), 't0_spearman': float(t0_spearman),
+        'amp_mae': float(amp_mae), 'amp_rmse': float(amp_rmse),
+        'amp_pearson': float(amp_pearson), 'amp_spearman': float(amp_spearman),
+    }
 
 
 if __name__ == "__main__":

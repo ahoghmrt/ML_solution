@@ -12,6 +12,7 @@ training_plots/
 comparison_plots/
 waveform_inspection/
 predictions/
+experiments/
 
 # Jupyter
 .ipynb_checkpoints/

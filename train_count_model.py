@@ -7,6 +7,8 @@ from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, average_precision_score
+from sklearn.preprocessing import label_binarize
 import pandas as pd
 from tensorflow.keras.callbacks import EarlyStopping
 
@@ -126,6 +128,56 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     plt.savefig("training_plots/signal_count_model_training.png")
     plt.close()
     logger.info("Saved model to 'signal_count_model.keras' and training plot")
+
+    # -----------------------------
+    # Final Evaluation on Validation Set
+    # -----------------------------
+    y_val_probs = model.predict(X_val)
+    y_val_pred = np.argmax(y_val_probs, axis=1)
+    val_accuracy = np.mean(y_val_pred == y_val)
+    logger.info(f"Final validation accuracy: {val_accuracy:.4f}")
+
+    report = classification_report(y_val, y_val_pred, zero_division=0)
+    logger.info(f"Classification Report:\n{report}")
+
+    # ROC AUC and PR AUC (one-vs-rest)
+    classes = np.arange(7)
+    y_val_bin = label_binarize(y_val, classes=classes)
+    present_classes = [c for c in classes if c in y_val]
+    if len(present_classes) > 1:
+        roc_auc = roc_auc_score(y_val_bin, y_val_probs, average='macro', multi_class='ovr')
+        pr_auc = average_precision_score(y_val_bin, y_val_probs, average='macro')
+        logger.info(f"ROC AUC (macro OVR): {roc_auc:.4f}")
+        logger.info(f"PR AUC (macro): {pr_auc:.4f}")
+    else:
+        roc_auc = None
+        pr_auc = None
+        logger.warning("Not enough classes in validation set for ROC/PR AUC")
+
+    # Confusion matrix
+    cm = confusion_matrix(y_val, y_val_pred, labels=classes)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, interpolation='nearest', cmap='Blues')
+    ax.set_title("Count Model Confusion Matrix (Validation)")
+    ax.set_xlabel("Predicted Count")
+    ax.set_ylabel("True Count")
+    ax.set_xticks(classes)
+    ax.set_yticks(classes)
+    plt.colorbar(im, ax=ax)
+    for i in range(7):
+        for j in range(7):
+            ax.text(j, i, str(cm[i, j]), ha='center', va='center',
+                    color='white' if cm[i, j] > cm.max() / 2 else 'black')
+    plt.tight_layout()
+    plt.savefig("training_plots/count_model_confusion_matrix.png")
+    plt.close()
+    logger.info("Saved confusion matrix to 'training_plots/count_model_confusion_matrix.png'")
+
+    return {
+        'accuracy': float(val_accuracy),
+        'roc_auc': float(roc_auc) if roc_auc is not None else None,
+        'pr_auc': float(pr_auc) if pr_auc is not None else None,
+    }
 
 
 if __name__ == "__main__":

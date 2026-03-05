@@ -2,10 +2,13 @@
 """CLI for the ADC waveform signal extraction ML pipeline."""
 
 import argparse
+import json
 import logging
 import os
+import shutil
 import sys
 import time
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -75,25 +78,61 @@ def cmd_prepare(args):
 
 def cmd_train_count(args):
     from train_count_model import main
-    _timed("train count model", main,
+    return _timed("train count model", main,
         epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
 
 
 def cmd_train_signal(args):
     from train_signal_model import main
-    _timed("train signal model", main,
+    return _timed("train signal model", main,
         epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
 
 
 def cmd_compare(args):
     from compare_signal_predictions import main
-    _timed("compare predictions", main)
+    return _timed("compare predictions", main)
 
 
 def cmd_plot(args):
     from plot_individual_waveform import main
     _timed("plot individual waveforms", main,
         start=args.start, end=args.end)
+
+
+def _save_experiment(args, all_metrics, timings, total_time):
+    """Collect all results into a timestamped experiment folder."""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    name = getattr(args, 'experiment_name', None)
+    folder_name = f"{timestamp}_{name}" if name else timestamp
+    exp_dir = os.path.join("experiments", folder_name)
+    os.makedirs(exp_dir, exist_ok=True)
+
+    # Save config
+    config = {k: v for k, v in vars(args).items()
+              if k not in ('func', 'command', 'baseline_input_dir', 'baseline_output_dir',
+                           'prepare_input_dir', 'prepare_output_dir', 'experiment_name')}
+    with open(os.path.join(exp_dir, "config.json"), "w") as f:
+        json.dump(config, f, indent=2)
+
+    # Save metrics
+    all_metrics['timings'] = {msg: round(elapsed, 1) for msg, elapsed in timings}
+    all_metrics['total_time_s'] = round(total_time, 1)
+    with open(os.path.join(exp_dir, "metrics.json"), "w") as f:
+        json.dump(all_metrics, f, indent=2)
+
+    # Copy plots
+    for src_dir in ("training_plots", "comparison_plots", "waveform_inspection"):
+        if os.path.isdir(src_dir):
+            dst = os.path.join(exp_dir, src_dir)
+            shutil.copytree(src_dir, dst, dirs_exist_ok=True)
+
+    # Copy log
+    log_path = os.path.join("logs", "pipeline.log")
+    if os.path.isfile(log_path):
+        shutil.copy2(log_path, os.path.join(exp_dir, "pipeline.log"))
+
+    logger.info(f"Experiment saved to '{exp_dir}/'")
+    return exp_dir
 
 
 def cmd_run_all(args):
@@ -114,13 +153,17 @@ def cmd_run_all(args):
         ("Step 7/7: Plotting individual waveforms", cmd_plot),
     ]
     timings = []
+    all_metrics = {}
     for msg, func in steps:
         logger.info("=" * 50)
         logger.info(msg)
         logger.info("=" * 50)
         t0 = time.time()
-        func(args)
+        result = func(args)
         timings.append((msg, time.time() - t0))
+        if isinstance(result, dict):
+            step_key = msg.split(": ", 1)[1].lower().replace(" ", "_")
+            all_metrics[step_key] = result
 
     total = time.time() - total_t0
     logger.info("=" * 50)
@@ -129,6 +172,8 @@ def cmd_run_all(args):
         logger.info(f"  {msg}: {elapsed:.1f}s")
     logger.info(f"  Total: {total:.1f}s")
     logger.info("=" * 50)
+
+    _save_experiment(args, all_metrics, timings, total)
 
 
 def build_parser():
@@ -204,6 +249,7 @@ def build_parser():
     p.add_argument("--test-size", type=float, default=0.2)
     p.add_argument("--start", type=int, default=1)
     p.add_argument("--end", type=int, default=300)
+    p.add_argument("--experiment-name", default=None, help="Optional name for the experiment folder")
     p.set_defaults(func=cmd_run_all)
 
     return parser
