@@ -33,19 +33,21 @@ def main():
     # Load scalers for inverse transform
     # ----------------------------
     scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
+    scaler_count_wave = joblib.load("training_plots/count_waveform_scaler.pkl")
     scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
     scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
 
     # ----------------------------
-    # Normalize inputs using saved scaler
+    # Normalize inputs using saved scalers
     # ----------------------------
-    X_scaled = scaler_wave.transform(X)
+    X_scaled_signal = scaler_wave.transform(X)
+    X_scaled_count = scaler_count_wave.transform(X)
 
     # ----------------------------
     # Predict counts and signals
     # ----------------------------
-    pred_counts = np.argmax(count_model.predict(X_scaled), axis=1)
-    pred_signals_norm = signal_model.predict(X_scaled[..., np.newaxis])
+    pred_counts = np.argmax(count_model.predict(X_scaled_count[..., np.newaxis]), axis=1)
+    pred_signals_norm = signal_model.predict(X_scaled_signal[..., np.newaxis])
 
     # ----------------------------
     # Inverse transform predictions
@@ -69,15 +71,13 @@ def main():
             pred_amp = pred_signals[i][2 * j + 1]
             true_t0, true_amp = y_true[i][j]
 
-            # Only add non-zero predictions
-            if pred_t0 != 0 or pred_amp != 0:
-                pred_t0s_all.append(pred_t0)
-                pred_amps_all.append(pred_amp)
-                true_t0s_all.append(true_t0)
-                true_amps_all.append(true_amp)
-                delta_t0s.append(pred_t0 - true_t0)
-                delta_amps.append(pred_amp - true_amp)
-                sample_true_counts.append(y_true_counts[i])
+            pred_t0s_all.append(pred_t0)
+            pred_amps_all.append(pred_amp)
+            true_t0s_all.append(true_t0)
+            true_amps_all.append(true_amp)
+            delta_t0s.append(pred_t0 - true_t0)
+            delta_amps.append(pred_amp - true_amp)
+            sample_true_counts.append(y_true_counts[i])
 
     # ----------------------------
     # Numeric Metrics

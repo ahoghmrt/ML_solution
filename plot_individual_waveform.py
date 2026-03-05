@@ -15,6 +15,7 @@ def main(start=1, end=300):
     signal_model = keras.models.load_model("signal_model.keras")
     count_model = keras.models.load_model("signal_count_model.keras")
     scaler_wave = joblib.load("training_plots/waveform_scaler.pkl")
+    scaler_count_wave = joblib.load("training_plots/count_waveform_scaler.pkl")
     scaler_t0 = joblib.load("training_plots/t0_scaler.pkl")
     scaler_amp = joblib.load("training_plots/amp_scaler.pkl")
 
@@ -28,14 +29,15 @@ def main(start=1, end=300):
 
     os.makedirs("waveform_inspection", exist_ok=True)
 
-    # Normalize waveforms
-    X_scaled = scaler_wave.transform(X)
+    # Normalize waveforms (each model uses its own scaler)
+    X_scaled_signal = scaler_wave.transform(X)
+    X_scaled_count = scaler_count_wave.transform(X)
 
     for idx in range(start, end):
         waveform = X[idx]
         true_signals = y_true[idx]
-        pred_count = np.argmax(count_model.predict(X_scaled[[idx]]), axis=1)[0]
-        pred_signals_norm = signal_model.predict(X_scaled[[idx]][..., np.newaxis])[0]
+        pred_count = np.argmax(count_model.predict(X_scaled_count[[idx]][..., np.newaxis]), axis=1)[0]
+        pred_signals_norm = signal_model.predict(X_scaled_signal[[idx]][..., np.newaxis])[0]
 
         # Inverse transform predictions
         pred_signals = pred_signals_norm.copy()
@@ -61,7 +63,7 @@ def main(start=1, end=300):
         plt.figure(figsize=(10, 4))
         plt.plot(time, waveform, color='gray', label='Waveform')
         plt.scatter(true_t0, true_amp, color='blue', edgecolors='k', label='True', s=60)
-        plt.scatter(pred_t0, pred_amp, color='green', edgecolors='k', marker='x', label='Predicted', s=60)
+        plt.scatter(pred_t0, pred_amp, color='green', marker='x', label='Predicted', s=60)
         plt.title(f"Waveform #{idx}")
         plt.xlabel("Time (ns)")
         plt.ylabel("Amplitude")

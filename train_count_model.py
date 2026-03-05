@@ -7,6 +7,7 @@ from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+import joblib
 from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, average_precision_score
 from sklearn.preprocessing import label_binarize
 import pandas as pd
@@ -32,6 +33,11 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     # -----------------------------
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
+    X_scaled = np.expand_dims(X_scaled, axis=-1)
+
+    # Save waveform scaler for inference
+    os.makedirs("training_plots", exist_ok=True)
+    joblib.dump(scaler, "training_plots/count_waveform_scaler.pkl")
 
     # -----------------------------
     # Build Model (Model = CONV, Input = waveform, Output = signal count class)
