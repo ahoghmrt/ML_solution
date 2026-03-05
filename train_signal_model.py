@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -8,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
+
+logger = logging.getLogger(__name__)
 
 
 def main(epochs=30, batch_size=64, test_size=0.2):
@@ -21,8 +24,8 @@ def main(epochs=30, batch_size=64, test_size=0.2):
 
     max_signals = y.shape[1]
 
-    print(f"✅ Loaded dataset: {X_wave.shape[0]} samples, each with {X_wave.shape[1]} time bins")
-    print(f"✅ Label shape (t0, A): {y.shape}, Time shape: {time.shape}")
+    logger.info(f"Loaded dataset: {X_wave.shape[0]} samples, each with {X_wave.shape[1]} time bins")
+    logger.info(f"Label shape (t0, A): {y.shape}, Time shape: {time.shape}")
 
     # -----------------------------
     # Normalize targets (t0 and amplitude separately)

@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import logging
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
@@ -8,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import pandas as pd
 from tensorflow.keras.callbacks import EarlyStopping
+
+logger = logging.getLogger(__name__)
 
 
 def main(epochs=40, batch_size=128, test_size=0.2):
@@ -19,8 +22,8 @@ def main(epochs=40, batch_size=128, test_size=0.2):
     y = data["labels"]                         # shape: (samples,)
     time = data["time"]
 
-    print(f"✅ Loaded: {X.shape[0]} waveforms with {X.shape[1]} time bins")
-    print(f"✅ Label shape (signal counts): {y.shape}")
+    logger.info(f"Loaded: {X.shape[0]} waveforms with {X.shape[1]} time bins")
+    logger.info(f"Label shape (signal counts): {y.shape}")
 
     # -----------------------------
     # Normalize Inputs

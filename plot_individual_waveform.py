@@ -1,8 +1,11 @@
 import numpy as np
+import logging
 import matplotlib.pyplot as plt
 import os
 from tensorflow import keras
 import joblib
+
+logger = logging.getLogger(__name__)
 
 
 def main(start=1, end=300):
@@ -69,7 +72,7 @@ def main(start=1, end=300):
         plt.savefig(fname)
         plt.close()
 
-    print(f"✅ Saved {end - start} waveform plots in 'waveform_inspection/' folder.")
+    logger.info(f"Saved {end - start} waveform plots in 'waveform_inspection/' folder.")
 
 
 if __name__ == "__main__":

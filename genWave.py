@@ -1,6 +1,9 @@
 import numpy as np
 import os
 import random
+import logging
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------
 # GLOBAL PARAMETERS
@@ -89,7 +92,7 @@ def generate_dataset(num_waveforms=1000, output_dir="waveform_raw", noise_std=0.
                 f.write(f"{idx}\t{t0:.2f}\t{amp:.2f}\n")
             f.write(f"Number of Signals: {n_signals}\n")
 
-        print(f"✅ Saved: {wf_file}, {truth_file}")
+        logger.info(f"Saved: {wf_file}, {truth_file}")
 
 # -------------------------------
 # RUN SCRIPT

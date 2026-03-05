@@ -7,6 +7,7 @@ waveform_baseline_removed/
 ml_training_data/
 
 # Generated output
+logs/
 training_plots/
 comparison_plots/
 waveform_inspection/

@@ -1,8 +1,11 @@
 import numpy as np
+import logging
 import matplotlib.pyplot as plt
 import os
 from tensorflow import keras
 import joblib
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -127,7 +130,7 @@ def main():
         plt.show()
     plt.close()
 
-    print("✅ Hexbin plots and delta histograms saved in 'comparison_plots/' folder.")
+    logger.info("Hexbin plots and delta histograms saved in 'comparison_plots/' folder.")
 
 
 if __name__ == "__main__":

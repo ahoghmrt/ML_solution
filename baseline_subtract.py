@@ -2,6 +2,9 @@ import numpy as np
 import os
 import pandas as pd
 from glob import glob
+import logging
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------
 # Rolling Quantile Baseline Function
@@ -35,7 +38,7 @@ def subtract_baseline(input_dir="waveform_raw", output_dir="waveform_baseline_re
         np.savetxt(output_file, np.column_stack((time, waveform_subtracted)),
                    header="Time(ns)\tAmplitude", fmt="%.2f")
 
-        print(f"✅ Baseline removed and saved: {output_file}")
+        logger.info(f"Baseline removed and saved: {output_file}")
 
 # -------------------------------
 # RUN SCRIPT

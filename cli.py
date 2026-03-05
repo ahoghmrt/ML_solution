@@ -2,7 +2,29 @@
 """CLI for the ADC waveform signal extraction ML pipeline."""
 
 import argparse
+import logging
+import os
 import sys
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging(log_file="pipeline.log"):
+    """Configure logging to both console and file."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                            datefmt="%Y-%m-%d %H:%M:%S")
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    root.addHandler(console)
+
+    os.makedirs("logs", exist_ok=True)
+    file_handler = logging.FileHandler(os.path.join("logs", log_file))
+    file_handler.setFormatter(fmt)
+    root.addHandler(file_handler)
 
 
 def cmd_generate(args):
@@ -57,42 +79,22 @@ def cmd_plot(args):
 
 
 def cmd_run_all(args):
-    print("=" * 50)
-    print("Step 1/7: Generating waveforms")
-    print("=" * 50)
-    cmd_generate(args)
+    steps = [
+        ("Step 1/7: Generating waveforms", cmd_generate),
+        ("Step 2/7: Subtracting baselines", cmd_baseline),
+        ("Step 3/7: Preparing ML dataset", cmd_prepare),
+        ("Step 4/7: Training count model", cmd_train_count),
+        ("Step 5/7: Training signal model", cmd_train_signal),
+        ("Step 6/7: Comparing predictions", cmd_compare),
+        ("Step 7/7: Plotting individual waveforms", cmd_plot),
+    ]
+    for msg, func in steps:
+        logger.info("=" * 50)
+        logger.info(msg)
+        logger.info("=" * 50)
+        func(args)
 
-    print("\n" + "=" * 50)
-    print("Step 2/7: Subtracting baselines")
-    print("=" * 50)
-    cmd_baseline(args)
-
-    print("\n" + "=" * 50)
-    print("Step 3/7: Preparing ML dataset")
-    print("=" * 50)
-    cmd_prepare(args)
-
-    print("\n" + "=" * 50)
-    print("Step 4/7: Training count model")
-    print("=" * 50)
-    cmd_train_count(args)
-
-    print("\n" + "=" * 50)
-    print("Step 5/7: Training signal model")
-    print("=" * 50)
-    cmd_train_signal(args)
-
-    print("\n" + "=" * 50)
-    print("Step 6/7: Comparing predictions")
-    print("=" * 50)
-    cmd_compare(args)
-
-    print("\n" + "=" * 50)
-    print("Step 7/7: Plotting individual waveforms")
-    print("=" * 50)
-    cmd_plot(args)
-
-    print("\n✅ Full pipeline complete!")
+    logger.info("Full pipeline complete!")
 
 
 def build_parser():
@@ -181,6 +183,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    setup_logging()
     args.func(args)
 
 

@@ -1,5 +1,8 @@
 import numpy as np
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def main(input_dir="waveform_baseline_removed", truth_dir="waveform_raw", output_dir="ml_training_data", max_signals=7):
     os.makedirs(output_dir, exist_ok=True)
@@ -59,21 +62,14 @@ def main(input_dir="waveform_baseline_removed", truth_dir="waveform_raw", output
              labels=labels_count,
              time=time)
 
-    print("✅ Saved:")
-    print(" - training_data_signals.npz (for t0, amplitude regression)")
-    print(" - training_data_counts.npz (for signal count classification)")
+    logger.info("Saved training_data_signals.npz (for t0, amplitude regression)")
+    logger.info("Saved training_data_counts.npz (for signal count classification)")
 
-    print("\n🔍 Verifying contents of training_data_signals.npz:")
     data_signals = np.load(os.path.join(output_dir, "training_data_signals.npz"))
-    print("  ✅ waveforms shape:", data_signals["waveforms"].shape)
-    print("  ✅ labels (t0, A) shape:", data_signals["labels"].shape)
-    print("  ✅ time shape:", data_signals["time"].shape)
+    logger.info(f"Signals - waveforms: {data_signals['waveforms'].shape}, labels: {data_signals['labels'].shape}, time: {data_signals['time'].shape}")
 
-    print("\n🔍 Verifying contents of training_data_counts.npz:")
     data_counts = np.load(os.path.join(output_dir, "training_data_counts.npz"))
-    print("  ✅ waveforms shape:", data_counts["waveforms"].shape)
-    print("  ✅ labels (signal counts) shape:", data_counts["labels"].shape)
-    print("  ✅ time shape:", data_counts["time"].shape)
+    logger.info(f"Counts - waveforms: {data_counts['waveforms'].shape}, labels: {data_counts['labels'].shape}, time: {data_counts['time'].shape}")
 
 
 if __name__ == "__main__":
