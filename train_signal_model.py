@@ -74,8 +74,33 @@ model.summary()
 # Train/Test Split
 # -----------------------------
 X_train, X_val, y_train, y_val = train_test_split(
-    X_wave_scaled, y_flat, test_size=0.35, random_state=42
+    X_wave_scaled, y_flat, test_size=0.2, random_state=42
 )
+
+# -----------------------------
+# Callbacks
+# -----------------------------
+callbacks = [
+    keras.callbacks.EarlyStopping(
+        monitor='val_mae',
+        patience=6,
+        restore_best_weights=True,
+        verbose=1
+    ),
+    keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=3,
+        min_lr=1e-6,
+        verbose=1
+    ),
+    keras.callbacks.ModelCheckpoint(
+        filepath='best_signal_model.keras',
+        monitor='val_mae',
+        save_best_only=True,
+        verbose=1
+    )
+]
 
 # -----------------------------
 # Train
@@ -84,7 +109,8 @@ history = model.fit(
     X_train, y_train,
     validation_data=(X_val, y_val),
     epochs=30,
-    batch_size=64
+    batch_size=64,
+    callbacks=callbacks
 )
 
 # -----------------------------
@@ -106,4 +132,6 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.savefig("training_plots/signal_model_training.png")
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()

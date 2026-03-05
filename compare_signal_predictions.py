@@ -93,7 +93,9 @@ ax2.grid(True)
 
 plt.tight_layout()
 plt.savefig("comparison_plots/t0_comparison_combined.png")
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()
 
 # ----------------------------------------------
 
@@ -119,7 +121,9 @@ ax2.grid(True)
 
 plt.tight_layout()
 plt.savefig("comparison_plots/amplitude_comparison_combined.png")
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()
 
 print("✅ Hexbin plots and delta histograms saved in 'comparison_plots/' folder.")
 

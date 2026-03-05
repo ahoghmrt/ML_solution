@@ -1,6 +1,7 @@
 import numpy as np
 from tensorflow.keras.models import load_model
 import matplotlib.pyplot as plt
+import os
 
 # Load dataset
 data = np.load("ml_training_data/training_data_signals.npz")
@@ -65,4 +66,6 @@ axes[1].grid(True)
 
 plt.tight_layout()
 plt.savefig("ml_training_data/scatter_true_vs_pred_t0_amp.png")
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()

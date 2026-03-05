@@ -1,0 +1,20 @@
+# Model files
+*.keras
+
+# Data directories
+waveform_raw/
+waveform_baseline_removed/
+ml_training_data/
+
+# Generated output
+training_plots/
+comparison_plots/
+waveform_inspection/
+predictions/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc

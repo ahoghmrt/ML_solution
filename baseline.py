@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 import pandas as pd
 import time as clock_timer
+import os
 
 # -------------------------------
 # LOAD WAVEFORM DATA
@@ -63,7 +64,9 @@ axes[1].legend()
 axes[1].grid(True)
 
 plt.tight_layout()
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()
 
 # -------------------------------
 # PRINT RESULTS

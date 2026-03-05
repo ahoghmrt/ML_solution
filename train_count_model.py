@@ -78,7 +78,7 @@ model.summary()
 # Train/Test Split
 # -----------------------------
 X_train, X_val, y_train, y_val = train_test_split(
-    X_scaled, y, test_size=0.35, random_state=42
+    X_scaled, y, test_size=0.2, random_state=42
 )
 
 # -----------------------------
@@ -137,4 +137,6 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.savefig("training_plots/signal_count_model_training.png")
-plt.show()
+if os.environ.get("DISPLAY"):
+    plt.show()
+plt.close()
