@@ -22,7 +22,7 @@ mimeopen -d || gio open
 
 # Gna tanbranch stegh aveli hin versiaya: train_cout u train_signal arandzin a, Waveform-nern el edqan realistic chen 
 
-genWave.py - creates waveforms close to reality in folder waveform_raw
+gen_wave.py - creates waveforms close to reality in folder waveform_raw
 
 baseline_subtract.py - removes baselines and saves waveforms in folder waveform_baseline_removed
 

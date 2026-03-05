@@ -39,7 +39,7 @@ def _timed(label, func, *a, **kw):
 
 
 def cmd_generate(args):
-    from genWave import generate_dataset
+    from gen_wave import generate_dataset
     _timed("generate waveforms", generate_dataset,
         num_waveforms=args.num_waveforms,
         output_dir=args.output_dir,
