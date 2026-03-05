@@ -11,9 +11,190 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from scipy.stats import pearsonr, spearmanr
+from scipy.optimize import linear_sum_assignment
 import config as cfg
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    _register = keras.saving.register_keras_serializable
+except AttributeError:
+    _register = tf.keras.utils.register_keras_serializable
+
+
+@_register(package="signal_model")
+class WeightedHuberLoss(keras.losses.Loss):
+    """Huber loss with per-component weights (higher weight on t0)."""
+    def __init__(self, max_signals=cfg.MAX_SIGNALS, delta=cfg.HUBER_DELTA,
+                 t0_weight=cfg.T0_LOSS_WEIGHT, **kwargs):
+        super().__init__(**kwargs)
+        self.max_signals = max_signals
+        self.delta = delta
+        self.t0_weight = t0_weight
+        w = []
+        for _ in range(max_signals):
+            w.extend([t0_weight, 1.0])
+        self.weights = tf.constant(w, dtype=tf.float32)
+
+    def call(self, y_true, y_pred):
+        error = y_true - y_pred
+        abs_error = tf.abs(error)
+        huber = tf.where(abs_error <= self.delta,
+                         0.5 * tf.square(error),
+                         self.delta * (abs_error - 0.5 * self.delta))
+        return tf.reduce_mean(huber * self.weights)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "max_signals": self.max_signals,
+            "delta": self.delta,
+            "t0_weight": self.t0_weight,
+        })
+        return config
+
+
+def _build_signal_loss(max_signals):
+    """Build loss function based on config."""
+    if cfg.SIGNAL_LOSS_TYPE == "weighted_huber":
+        return WeightedHuberLoss(max_signals=max_signals)
+    else:
+        return 'mae'
+
+
+class _HistoryWrapper:
+    """Wraps a dict to look like keras History for plotting compatibility."""
+    def __init__(self, history_dict):
+        self.history = history_dict
+
+
+def _pit_training_loop(model, X_train, y_train, X_val, y_val,
+                       signal_counts_train, signal_counts_val,
+                       max_signals, epochs, batch_size):
+    """Custom training loop with permutation-invariant matching."""
+    optimizer = keras.optimizers.Adam()
+    loss_fn = _build_signal_loss(max_signals)
+    if isinstance(loss_fn, str):
+        loss_fn = keras.losses.MeanAbsoluteError()
+
+    best_val_loss = np.inf
+    patience_counter = 0
+    lr_patience_counter = 0
+    history = {'loss': [], 'val_loss': [], 'mae': [], 'val_mae': []}
+
+    best_weights = model.get_weights()
+
+    for epoch in range(epochs):
+        # Shuffle training data
+        perm = np.random.permutation(len(X_train))
+        X_shuf = X_train[perm]
+        y_shuf = y_train[perm]
+        counts_shuf = signal_counts_train[perm]
+
+        epoch_losses = []
+        epoch_maes = []
+
+        # Mini-batch loop
+        for start in range(0, len(X_shuf), batch_size):
+            end = min(start + batch_size, len(X_shuf))
+            X_batch = X_shuf[start:end]
+            y_batch = y_shuf[start:end]
+            counts_batch = counts_shuf[start:end]
+
+            with tf.GradientTape() as tape:
+                y_pred = model(X_batch, training=True)
+                y_pred_np = y_pred.numpy()
+
+                # Hungarian-reorder y_true to match y_pred
+                y_reordered = y_batch.copy()
+                for bi in range(len(X_batch)):
+                    n_active = int(counts_batch[bi])
+                    if n_active < 2:
+                        continue
+                    # Build cost matrix in normalized space
+                    cost = np.zeros((max_signals, n_active))
+                    for s in range(max_signals):
+                        for t in range(n_active):
+                            cost[s, t] = abs(y_pred_np[bi, 2*s] - y_batch[bi, 2*t]) + \
+                                         abs(y_pred_np[bi, 2*s+1] - y_batch[bi, 2*t+1])
+                    row_ind, col_ind = linear_sum_assignment(cost)
+                    # Build reordered target: place matched true signals into optimal slots
+                    new_target = np.zeros(max_signals * 2)
+                    for r, c in zip(row_ind, col_ind):
+                        new_target[2*r] = y_batch[bi, 2*c]
+                        new_target[2*r+1] = y_batch[bi, 2*c+1]
+                    y_reordered[bi] = new_target
+
+                y_reordered_tf = tf.constant(y_reordered, dtype=tf.float32)
+                batch_loss = loss_fn(y_reordered_tf, y_pred)
+
+            grads = tape.gradient(batch_loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+            epoch_losses.append(float(batch_loss))
+            epoch_maes.append(float(tf.reduce_mean(tf.abs(y_reordered_tf - y_pred))))
+
+        # Validation
+        val_pred = model(X_val, training=False)
+        val_pred_np = val_pred.numpy()
+        y_val_reordered = y_val.copy()
+        for bi in range(len(X_val)):
+            n_active = int(signal_counts_val[bi])
+            if n_active < 2:
+                continue
+            cost = np.zeros((max_signals, n_active))
+            for s in range(max_signals):
+                for t in range(n_active):
+                    cost[s, t] = abs(val_pred_np[bi, 2*s] - y_val[bi, 2*t]) + \
+                                 abs(val_pred_np[bi, 2*s+1] - y_val[bi, 2*t+1])
+            row_ind, col_ind = linear_sum_assignment(cost)
+            new_target = np.zeros(max_signals * 2)
+            for r, c in zip(row_ind, col_ind):
+                new_target[2*r] = y_val[bi, 2*c]
+                new_target[2*r+1] = y_val[bi, 2*c+1]
+            y_val_reordered[bi] = new_target
+
+        val_loss = float(loss_fn(tf.constant(y_val_reordered, dtype=tf.float32), val_pred))
+        val_mae = float(tf.reduce_mean(tf.abs(tf.constant(y_val_reordered, dtype=tf.float32) - val_pred)))
+
+        train_loss = np.mean(epoch_losses)
+        train_mae = np.mean(epoch_maes)
+        history['loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+        history['mae'].append(train_mae)
+        history['val_mae'].append(val_mae)
+
+        logger.info(f"Epoch {epoch+1}/{epochs} - loss: {train_loss:.4f} - mae: {train_mae:.4f} "
+                     f"- val_loss: {val_loss:.4f} - val_mae: {val_mae:.4f}")
+
+        # ModelCheckpoint
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_weights = model.get_weights()
+            model.save("best_signal_model.keras")
+            patience_counter = 0
+            lr_patience_counter = 0
+        else:
+            patience_counter += 1
+            lr_patience_counter += 1
+
+        # ReduceLROnPlateau
+        if lr_patience_counter >= cfg.LR_REDUCE_PATIENCE:
+            old_lr = float(optimizer.learning_rate)
+            new_lr = max(old_lr * cfg.LR_REDUCE_FACTOR, cfg.LR_MIN)
+            optimizer.learning_rate.assign(new_lr)
+            logger.info(f"Reducing learning rate: {old_lr:.2e} -> {new_lr:.2e}")
+            lr_patience_counter = 0
+
+        # EarlyStopping
+        if patience_counter >= cfg.EARLY_STOPPING_PATIENCE:
+            logger.info(f"Early stopping at epoch {epoch+1}")
+            break
+
+    # Restore best weights
+    model.set_weights(best_weights)
+    return _HistoryWrapper(history)
 
 
 def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE):
@@ -65,59 +246,78 @@ def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE,
 
     # Conv1D processing
     x = layers.Conv1D(cfg.CONV_FILTERS[0], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(input_wave)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
     x = layers.Conv1D(cfg.CONV_FILTERS[1], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(x)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
     x = layers.Flatten()(x)
     x = layers.Dense(cfg.DENSE_UNITS[0], activation='relu')(x)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
+    x = layers.Dropout(cfg.DROPOUT_RATE)(x)
     x = layers.Dense(cfg.DENSE_UNITS[1], activation='relu')(x)
     output = layers.Dense(max_signals * 2, name="signal_output")(x)
 
     model = keras.Model(inputs=input_wave, outputs=output)
-    model.compile(optimizer='adam', loss='mae', metrics=['mae'])
+
+    # Build loss function
+    loss_fn = _build_signal_loss(max_signals)
+    model.compile(optimizer='adam', loss=loss_fn, metrics=['mae'])
     model.summary()
 
+
+    # Load signal counts for PIT
+    count_data = np.load(os.path.join(cfg.DIR_ML_DATA, "training_data_counts.npz"))
+    signal_counts = count_data["labels"]  # (N,)
 
     # -----------------------------
     # Train/Test Split
     # -----------------------------
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_wave_scaled, y_flat, test_size=test_size, random_state=cfg.RANDOM_STATE
+    X_train, X_val, y_train, y_val, counts_train, counts_val = train_test_split(
+        X_wave_scaled, y_flat, signal_counts,
+        test_size=test_size, random_state=cfg.RANDOM_STATE
     )
-
-    # -----------------------------
-    # Callbacks
-    # -----------------------------
-    callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor='val_mae',
-            patience=cfg.EARLY_STOPPING_PATIENCE,
-            restore_best_weights=True,
-            verbose=1
-        ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=cfg.LR_REDUCE_FACTOR,
-            patience=cfg.LR_REDUCE_PATIENCE,
-            min_lr=cfg.LR_MIN,
-            verbose=1
-        ),
-        keras.callbacks.ModelCheckpoint(
-            filepath='best_signal_model.keras',
-            monitor='val_mae',
-            save_best_only=True,
-            verbose=1
-        )
-    ]
 
     # -----------------------------
     # Train
     # -----------------------------
-    history = model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=epochs,
-        batch_size=batch_size,
-        callbacks=callbacks
-    )
+    if cfg.USE_PIT_LOSS:
+        logger.info("Using permutation-invariant training (PIT)")
+        history = _pit_training_loop(
+            model, X_train, y_train, X_val, y_val,
+            counts_train, counts_val,
+            max_signals, epochs, batch_size
+        )
+    else:
+        callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor='val_mae',
+                patience=cfg.EARLY_STOPPING_PATIENCE,
+                restore_best_weights=True,
+                verbose=1
+            ),
+            keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=cfg.LR_REDUCE_FACTOR,
+                patience=cfg.LR_REDUCE_PATIENCE,
+                min_lr=cfg.LR_MIN,
+                verbose=1
+            ),
+            keras.callbacks.ModelCheckpoint(
+                filepath='best_signal_model.keras',
+                monitor='val_mae',
+                save_best_only=True,
+                verbose=1
+            )
+        ]
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks
+        )
 
     # -----------------------------
     # Save Model and History

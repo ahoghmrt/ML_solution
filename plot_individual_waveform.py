@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 from tensorflow import keras
 import joblib
+from scipy.optimize import linear_sum_assignment
 import config as cfg
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ def main(start=cfg.PLOT_START, end=cfg.PLOT_END):
     # ----------------------------
     # Load models and scalers
     # ----------------------------
+    from train_signal_model import WeightedHuberLoss  # register custom loss
     signal_model = keras.models.load_model("signal_model.keras")
     count_model = keras.models.load_model("signal_count_model.keras")
     scaler_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "waveform_scaler.pkl"))
@@ -66,11 +68,26 @@ def main(start=cfg.PLOT_START, end=cfg.PLOT_END):
             pred_t0.append(t0)
             pred_amp.append(amp)
 
+        # Hungarian matching between pred and true signals
+        n_pred = len(pred_t0)
+        n_true = len(true_t0)
+        matches = []
+        if n_pred > 0 and n_true > 0:
+            pred_arr = np.array(list(zip(pred_t0, pred_amp)))
+            true_arr = np.array(list(zip(true_t0, true_amp)))
+            cost = np.abs(pred_arr[:, np.newaxis, 0] - true_arr[np.newaxis, :, 0]) + \
+                   np.abs(pred_arr[:, np.newaxis, 1] - true_arr[np.newaxis, :, 1])
+            row_ind, col_ind = linear_sum_assignment(cost)
+            matches = list(zip(row_ind, col_ind))
+
         # Plot
         plt.figure(figsize=(10, 4))
         plt.plot(time, waveform, color='gray', label='Waveform')
         plt.scatter(true_t0, true_amp, color='blue', edgecolors='k', label='True', s=60)
         plt.scatter(pred_t0, pred_amp, color='green', marker='x', label='Predicted', s=60)
+        for pi, ti in matches:
+            plt.plot([pred_t0[pi], true_t0[ti]], [pred_amp[pi], true_amp[ti]],
+                     'k--', alpha=0.4, linewidth=0.8)
         plt.title(f"Waveform #{idx}")
         plt.xlabel("Time (ns)")
         plt.ylabel("Amplitude")

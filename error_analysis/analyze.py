@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy import stats
+from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import (
     classification_report,
     confusion_matrix,
@@ -26,6 +27,21 @@ import config as cfg
 logger = logging.getLogger(__name__)
 
 
+def _match_signals(pred_signals_i, y_true_i, n_pred, n_true):
+    """Hungarian-match predicted signals to true signals.
+
+    Returns list of (pred_idx, true_idx) pairs.
+    """
+    if n_pred == 0 or n_true == 0:
+        return []
+    pred_pairs = np.array([[pred_signals_i[2 * j], pred_signals_i[2 * j + 1]] for j in range(n_pred)])
+    true_pairs = np.array([[y_true_i[j, 0], y_true_i[j, 1]] for j in range(n_true)])
+    cost = np.abs(pred_pairs[:, np.newaxis, 0] - true_pairs[np.newaxis, :, 0]) + \
+           np.abs(pred_pairs[:, np.newaxis, 1] - true_pairs[np.newaxis, :, 1])
+    row_ind, col_ind = linear_sum_assignment(cost)
+    return list(zip(row_ind, col_ind))
+
+
 def _load_predictions(experiment_dir):
     """Load models, scalers, data, and compute all predictions."""
     # Load config from experiment
@@ -33,6 +49,7 @@ def _load_predictions(experiment_dir):
         exp_config = json.load(f)
 
     # Load models and scalers
+    from train_signal_model import WeightedHuberLoss  # register custom loss
     signal_model = keras.models.load_model("signal_model.keras")
     count_model = keras.models.load_model("signal_count_model.keras")
     scaler_wave = joblib.load(os.path.join(cfg.DIR_TRAINING_PLOTS, "waveform_scaler.pkl"))
@@ -70,33 +87,44 @@ def _load_predictions(experiment_dir):
 
 
 def _per_slot_analysis(data, out_dir):
-    """Per-slot MAE and RMSE for t0 and amplitude."""
+    """Per-rank MAE and RMSE for t0 and amplitude (Hungarian-matched)."""
     y_true = data["y_true"]
     pred = data["pred_signals"]
+    pred_counts = data["pred_counts"]
+    y_true_counts = data["y_true_counts"]
     max_signals = y_true.shape[1]
+
+    # Collect errors per matched rank (sorted by true t0)
+    slot_t0_errs = [[] for _ in range(max_signals)]
+    slot_amp_errs = [[] for _ in range(max_signals)]
+
+    for i in range(len(y_true)):
+        tc = int(y_true_counts[i])
+        pc = int(pred_counts[i])
+        if tc == 0:
+            continue
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        # Sort matches by true t0 to assign ranks
+        matches_sorted = sorted(matches, key=lambda m: y_true[i, m[1], 0])
+        for rank, (pi, ti) in enumerate(matches_sorted):
+            slot_t0_errs[rank].append(pred[i, 2 * pi] - y_true[i, ti, 0])
+            slot_amp_errs[rank].append(pred[i, 2 * pi + 1] - y_true[i, ti, 1])
 
     slot_t0_mae, slot_amp_mae = [], []
     slot_t0_rmse, slot_amp_rmse = [], []
-
     for s in range(max_signals):
-        true_t0 = y_true[:, s, 0]
-        true_amp = y_true[:, s, 1]
-        pred_t0 = pred[:, 2 * s]
-        pred_amp = pred[:, 2 * s + 1]
-
-        # Only evaluate on samples that actually have this slot filled
-        active = (true_t0 > 0) | (true_amp > 0)
-        if active.sum() == 0:
+        if len(slot_t0_errs[s]) == 0:
             slot_t0_mae.append(0)
             slot_amp_mae.append(0)
             slot_t0_rmse.append(0)
             slot_amp_rmse.append(0)
-            continue
-
-        slot_t0_mae.append(mean_absolute_error(true_t0[active], pred_t0[active]))
-        slot_amp_mae.append(mean_absolute_error(true_amp[active], pred_amp[active]))
-        slot_t0_rmse.append(np.sqrt(mean_squared_error(true_t0[active], pred_t0[active])))
-        slot_amp_rmse.append(np.sqrt(mean_squared_error(true_amp[active], pred_amp[active])))
+        else:
+            errs_t0 = np.array(slot_t0_errs[s])
+            errs_amp = np.array(slot_amp_errs[s])
+            slot_t0_mae.append(float(np.mean(np.abs(errs_t0))))
+            slot_amp_mae.append(float(np.mean(np.abs(errs_amp))))
+            slot_t0_rmse.append(float(np.sqrt(np.mean(errs_t0 ** 2))))
+            slot_amp_rmse.append(float(np.sqrt(np.mean(errs_amp ** 2))))
 
     slots = np.arange(max_signals)
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -152,13 +180,14 @@ def _error_vs_count(data, out_dir):
     count_groups_amp = {c: [] for c in sorted(np.unique(y_true_counts)) if c > 0}
 
     for i in range(len(y_true)):
-        tc = y_true_counts[i]
+        tc = int(y_true_counts[i])
         if tc == 0:
             continue
-        n = min(int(pred_counts[i]), int(tc))
-        for j in range(n):
-            dt0 = pred[i, 2 * j] - y_true[i, j, 0]
-            damp = pred[i, 2 * j + 1] - y_true[i, j, 1]
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        for pi, ti in matches:
+            dt0 = pred[i, 2 * pi] - y_true[i, ti, 0]
+            damp = pred[i, 2 * pi + 1] - y_true[i, ti, 1]
             count_groups_t0[tc].append(dt0)
             count_groups_amp[tc].append(damp)
 
@@ -211,14 +240,16 @@ def _temporal_error_profile(data, out_dir):
 
     true_t0s, errors_t0, errors_amp = [], [], []
     for i in range(len(y_true)):
-        n = min(int(pred_counts[i]), int(y_true_counts[i]))
-        for j in range(n):
-            tt0 = y_true[i, j, 0]
+        tc = int(y_true_counts[i])
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        for pi, ti in matches:
+            tt0 = y_true[i, ti, 0]
             if tt0 <= 0:
                 continue
             true_t0s.append(tt0)
-            errors_t0.append(abs(pred[i, 2 * j] - tt0))
-            errors_amp.append(abs(pred[i, 2 * j + 1] - y_true[i, j, 1]))
+            errors_t0.append(abs(pred[i, 2 * pi] - tt0))
+            errors_amp.append(abs(pred[i, 2 * pi + 1] - y_true[i, ti, 1]))
 
     true_t0s = np.array(true_t0s)
     errors_t0 = np.array(errors_t0)
@@ -264,14 +295,16 @@ def _amplitude_error_analysis(data, out_dir):
 
     true_amps, errors_amp, errors_t0 = [], [], []
     for i in range(len(y_true)):
-        n = min(int(pred_counts[i]), int(y_true_counts[i]))
-        for j in range(n):
-            ta = y_true[i, j, 1]
+        tc = int(y_true_counts[i])
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        for pi, ti in matches:
+            ta = y_true[i, ti, 1]
             if ta <= 0:
                 continue
             true_amps.append(ta)
-            errors_amp.append(abs(pred[i, 2 * j + 1] - ta))
-            errors_t0.append(abs(pred[i, 2 * j] - y_true[i, j, 0]))
+            errors_amp.append(abs(pred[i, 2 * pi + 1] - ta))
+            errors_t0.append(abs(pred[i, 2 * pi] - y_true[i, ti, 0]))
 
     true_amps = np.array(true_amps)
     errors_amp = np.array(errors_amp)
@@ -336,11 +369,12 @@ def _spacing_analysis(data, out_dir):
         t0s_sorted = np.sort(t0s)
         min_sp = np.min(np.diff(t0s_sorted))
 
-        n = min(int(pred_counts[i]), tc)
-        if n == 0:
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        if len(matches) == 0:
             continue
-        t0_errs = [abs(pred[i, 2 * j] - y_true[i, j, 0]) for j in range(n)]
-        amp_errs = [abs(pred[i, 2 * j + 1] - y_true[i, j, 1]) for j in range(n)]
+        t0_errs = [abs(pred[i, 2 * pi] - y_true[i, ti, 0]) for pi, ti in matches]
+        amp_errs = [abs(pred[i, 2 * pi + 1] - y_true[i, ti, 1]) for pi, ti in matches]
 
         min_spacings.append(min_sp)
         waveform_t0_mae.append(np.mean(t0_errs))
@@ -392,16 +426,15 @@ def _worst_cases(data, out_dir, top_n=20):
     waveform_errors = np.zeros(len(X))
     for i in range(len(X)):
         tc = int(y_true_counts[i])
-        n = min(int(pred_counts[i]), tc)
-        if n == 0:
-            # Count error only
-            waveform_errors[i] = abs(int(pred_counts[i]) - tc) * 10  # penalty
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        if len(matches) == 0:
+            waveform_errors[i] = abs(pc - tc) * 10
             continue
-        for j in range(n):
-            waveform_errors[i] += abs(pred[i, 2 * j] - y_true[i, j, 0])
-            waveform_errors[i] += abs(pred[i, 2 * j + 1] - y_true[i, j, 1])
-        # Add penalty for count mismatch
-        waveform_errors[i] += abs(int(pred_counts[i]) - tc) * 10
+        for pi, ti in matches:
+            waveform_errors[i] += abs(pred[i, 2 * pi] - y_true[i, ti, 0])
+            waveform_errors[i] += abs(pred[i, 2 * pi + 1] - y_true[i, ti, 1])
+        waveform_errors[i] += abs(pc - tc) * 10
 
     worst_idx = np.argsort(waveform_errors)[-top_n:][::-1]
 
@@ -546,11 +579,13 @@ def _residual_analysis(data, out_dir):
 
     residuals_t0, residuals_amp = [], []
     for i in range(len(y_true)):
-        n = min(int(pred_counts[i]), int(y_true_counts[i]))
-        for j in range(n):
-            if y_true[i, j, 0] > 0 or y_true[i, j, 1] > 0:
-                residuals_t0.append(pred[i, 2 * j] - y_true[i, j, 0])
-                residuals_amp.append(pred[i, 2 * j + 1] - y_true[i, j, 1])
+        tc = int(y_true_counts[i])
+        pc = int(pred_counts[i])
+        matches = _match_signals(pred[i], y_true[i], pc, tc)
+        for pi, ti in matches:
+            if y_true[i, ti, 0] > 0 or y_true[i, ti, 1] > 0:
+                residuals_t0.append(pred[i, 2 * pi] - y_true[i, ti, 0])
+                residuals_amp.append(pred[i, 2 * pi + 1] - y_true[i, ti, 1])
 
     residuals_t0 = np.array(residuals_t0)
     residuals_amp = np.array(residuals_amp)

@@ -10,6 +10,7 @@ from sklearn.model_selection import train_test_split
 import joblib
 from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, average_precision_score
 from sklearn.preprocessing import label_binarize
+from sklearn.utils.class_weight import compute_class_weight
 import pandas as pd
 from tensorflow.keras.callbacks import EarlyStopping
 import config as cfg
@@ -47,9 +48,15 @@ def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, t
     input_layer = layers.Input(shape=(X.shape[1], 1), name="waveform_input")
 
     x = layers.Conv1D(cfg.CONV_FILTERS[0], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(input_layer)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
     x = layers.Conv1D(cfg.CONV_FILTERS[1], kernel_size=cfg.CONV_KERNEL_SIZE, activation='relu', padding='same')(x)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
     x = layers.Flatten()(x)
     x = layers.Dense(cfg.DENSE_UNITS[0], activation='relu')(x)
+    if cfg.USE_BATCHNORM:
+        x = layers.BatchNormalization()(x)
     x = layers.Dropout(cfg.DROPOUT_RATE)(x)
     x = layers.Dense(cfg.DENSE_UNITS[1], activation='relu')(x)
 
@@ -71,6 +78,16 @@ def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, t
     X_train, X_val, y_train, y_val = train_test_split(
         X_scaled, y, test_size=test_size, random_state=cfg.RANDOM_STATE
     )
+
+    # -----------------------------
+    # Class weights
+    # -----------------------------
+    class_weight_dict = None
+    if cfg.USE_CLASS_WEIGHTS:
+        classes_present = np.unique(y_train.astype(int))
+        weights = compute_class_weight('balanced', classes=classes_present, y=y_train.astype(int))
+        class_weight_dict = {int(c): float(w) for c, w in zip(classes_present, weights)}
+        logger.info(f"Class weights: {class_weight_dict}")
 
     # -----------------------------
     # Callbacks
@@ -105,7 +122,8 @@ def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, t
         validation_data=(X_val, y_val),
         epochs=epochs,
         batch_size=batch_size,
-        callbacks=callbacks
+        callbacks=callbacks,
+        class_weight=class_weight_dict,
     )
 
     # -----------------------------

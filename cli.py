@@ -51,6 +51,7 @@ def cmd_generate(args):
         baseline=args.baseline,
         min_spacing=args.min_spacing,
         max_signals=args.max_signals,
+        varied_noise=args.varied_noise,
     )
 
 
@@ -249,6 +250,8 @@ def build_parser():
     p.add_argument("--baseline", type=float, default=cfg.BASELINE)
     p.add_argument("--min-spacing", type=float, default=cfg.MIN_SPACING)
     p.add_argument("--max-signals", type=int, default=cfg.MAX_SIGNALS)
+    p.add_argument("--varied-noise", action="store_true", default=cfg.VARIED_NOISE)
+    p.add_argument("--no-varied-noise", dest="varied_noise", action="store_false")
     p.set_defaults(func=cmd_generate)
 
     # baseline
@@ -308,6 +311,8 @@ def build_parser():
     p.add_argument("--window-size", type=int, default=cfg.WINDOW_SIZE)
     p.add_argument("--quantile", type=float, default=cfg.QUANTILE)
     p.add_argument("--max-signals", type=int, default=cfg.MAX_SIGNALS)
+    p.add_argument("--varied-noise", action="store_true", default=cfg.VARIED_NOISE)
+    p.add_argument("--no-varied-noise", dest="varied_noise", action="store_false")
     p.add_argument("--epochs", type=int, default=cfg.COUNT_MODEL_EPOCHS)
     p.add_argument("--batch-size", type=int, default=cfg.COUNT_MODEL_BATCH_SIZE)
     p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)

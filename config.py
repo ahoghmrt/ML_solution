@@ -50,6 +50,15 @@ LR_REDUCE_PATIENCE = 3
 LR_REDUCE_FACTOR = 0.5
 LR_MIN = 1e-6
 
+# ── Improvements ────────────────────────────────────────────────
+VARIED_NOISE = True             # sample per-waveform noise from NOISE_STD_CHOICES
+USE_BATCHNORM = True            # add BatchNormalization layers
+USE_CLASS_WEIGHTS = True        # balanced class weights for count model
+SIGNAL_LOSS_TYPE = "weighted_huber"  # "mae" or "weighted_huber"
+HUBER_DELTA = 1.0               # delta for Huber loss
+T0_LOSS_WEIGHT = 2.0            # weight for t0 components in signal loss
+USE_PIT_LOSS = True             # permutation-invariant training
+
 # ── Plotting ─────────────────────────────────────────────────────
 PLOT_START = 1
 PLOT_END = 300

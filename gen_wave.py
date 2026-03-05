@@ -57,7 +57,7 @@ def _vectorized_pulses(t0s, amps):
 # -------------------------------
 # MAIN GENERATOR
 # -------------------------------
-def generate_dataset(num_waveforms=cfg.NUM_WAVEFORMS, output_dir=cfg.DIR_RAW, noise_std=cfg.NOISE_STD, baseline=cfg.BASELINE, min_spacing=cfg.MIN_SPACING, max_signals=cfg.MAX_SIGNALS):
+def generate_dataset(num_waveforms=cfg.NUM_WAVEFORMS, output_dir=cfg.DIR_RAW, noise_std=cfg.NOISE_STD, baseline=cfg.BASELINE, min_spacing=cfg.MIN_SPACING, max_signals=cfg.MAX_SIGNALS, varied_noise=cfg.VARIED_NOISE):
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Generating {num_waveforms} waveforms into '{output_dir}/'")
 
@@ -90,7 +90,12 @@ def generate_dataset(num_waveforms=cfg.NUM_WAVEFORMS, output_dir=cfg.DIR_RAW, no
         all_truth[mask, :k, 1] = peak_amps
 
     # Add noise and baseline to all waveforms at once
-    all_waveforms += np.random.normal(0, noise_std, all_waveforms.shape) + baseline
+    if varied_noise:
+        noise_stds = np.random.choice(cfg.NOISE_STD_CHOICES, size=num_waveforms)
+        noise = noise_stds[:, np.newaxis] * np.random.standard_normal(all_waveforms.shape)
+        all_waveforms += noise + baseline
+    else:
+        all_waveforms += np.random.normal(0, noise_std, all_waveforms.shape) + baseline
 
     np.savez(os.path.join(output_dir, "data.npz"),
              waveforms=all_waveforms,

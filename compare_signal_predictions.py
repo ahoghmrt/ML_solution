@@ -7,6 +7,7 @@ import joblib
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.metrics import confusion_matrix, accuracy_score
 from scipy.stats import pearsonr, spearmanr
+from scipy.optimize import linear_sum_assignment
 import config as cfg
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ def main():
     # ----------------------------
     # Load prediction models
     # ----------------------------
+    from train_signal_model import WeightedHuberLoss  # register custom loss
     signal_model = keras.models.load_model("signal_model.keras")
     count_model = keras.models.load_model("signal_count_model.keras")
 
@@ -66,12 +68,22 @@ def main():
     sample_true_counts = []
 
     for i in range(len(X)):
-        count = min(pred_counts[i], pred_signals.shape[1] // 2)  # Clamp to model output size
-        for j in range(count):
-            pred_t0 = pred_signals[i][2 * j]
-            pred_amp = pred_signals[i][2 * j + 1]
-            true_t0, true_amp = y_true[i][j]
+        tc = int(y_true_counts[i])
+        pc = int(pred_counts[i])
+        n = min(pc, tc)
+        if n == 0:
+            continue
 
+        # Build cost matrix and run Hungarian matching
+        pred_pairs = np.array([[pred_signals[i][2 * j], pred_signals[i][2 * j + 1]] for j in range(pc)])
+        true_pairs = np.array([[y_true[i][j][0], y_true[i][j][1]] for j in range(tc)])
+        cost = np.abs(pred_pairs[:, np.newaxis, 0] - true_pairs[np.newaxis, :, 0]) + \
+               np.abs(pred_pairs[:, np.newaxis, 1] - true_pairs[np.newaxis, :, 1])
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        for r, c in zip(row_ind, col_ind):
+            pred_t0, pred_amp = pred_pairs[r]
+            true_t0, true_amp = true_pairs[c]
             pred_t0s_all.append(pred_t0)
             pred_amps_all.append(pred_amp)
             true_t0s_all.append(true_t0)
@@ -106,7 +118,7 @@ def main():
     count_accuracy = accuracy_score(y_true_counts, pred_counts)
 
     logger.info("=" * 50)
-    logger.info("Signal Prediction Metrics (positional matching)")
+    logger.info("Signal Prediction Metrics (Hungarian matching)")
     logger.info("=" * 50)
     logger.info(f"  t0  - MAE: {t0_mae:.4f} ns, RMSE: {t0_rmse:.4f} ns, R2: {t0_r2:.4f}, "
                 f"Pearson: {t0_pearson:.4f}, Spearman: {t0_spearman:.4f}")
