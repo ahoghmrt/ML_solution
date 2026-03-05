@@ -101,6 +101,11 @@ def cmd_plot(args):
         start=args.start, end=args.end)
 
 
+def cmd_analyze(args):
+    from error_analysis.analyze import main
+    return _timed("error analysis", main, experiment_dir=args.experiment)
+
+
 def _save_experiment(args, all_metrics, timings, total_time):
     """Collect all results into a timestamped experiment folder."""
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -137,7 +142,21 @@ def _save_experiment(args, all_metrics, timings, total_time):
     return exp_dir
 
 
+def _train_count_worker(epochs, batch_size, test_size):
+    """Worker for parallel training — runs in a subprocess."""
+    from train_count_model import main
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size)
+
+
+def _train_signal_worker(epochs, batch_size, test_size):
+    """Worker for parallel training — runs in a subprocess."""
+    from train_signal_model import main
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size)
+
+
 def cmd_run_all(args):
+    from concurrent.futures import ProcessPoolExecutor
+
     # Set correct per-step directories so shared args don't conflict
     args.baseline_input_dir = args.output_dir              # waveform_raw
     args.baseline_output_dir = cfg.DIR_BASELINE_REMOVED
@@ -145,18 +164,48 @@ def cmd_run_all(args):
     args.prepare_output_dir = cfg.DIR_ML_DATA
 
     total_t0 = time.time()
-    steps = [
+    timings = []
+    all_metrics = {}
+
+    # Steps 1-3: sequential (each depends on the previous)
+    sequential_steps = [
         ("Step 1/7: Generating waveforms", cmd_generate),
         ("Step 2/7: Subtracting baselines", cmd_baseline),
         ("Step 3/7: Preparing ML dataset", cmd_prepare),
-        ("Step 4/7: Training count model", cmd_train_count),
-        ("Step 5/7: Training signal model", cmd_train_signal),
+    ]
+    for msg, func in sequential_steps:
+        logger.info("=" * 50)
+        logger.info(msg)
+        logger.info("=" * 50)
+        t0 = time.time()
+        func(args)
+        timings.append((msg, time.time() - t0))
+
+    # Steps 4 & 5: parallel (independent models)
+    logger.info("=" * 50)
+    logger.info("Steps 4-5/7: Training both models in parallel")
+    logger.info("=" * 50)
+    t0 = time.time()
+    with ProcessPoolExecutor(max_workers=2) as executor:
+        future_count = executor.submit(
+            _train_count_worker, args.epochs, args.batch_size, args.test_size)
+        future_signal = executor.submit(
+            _train_signal_worker, args.epochs, args.batch_size, args.test_size)
+        count_metrics = future_count.result()
+        signal_metrics = future_signal.result()
+    parallel_elapsed = time.time() - t0
+    timings.append(("Steps 4-5/7: Training both models (parallel)", parallel_elapsed))
+    if isinstance(count_metrics, dict):
+        all_metrics["training_count_model"] = count_metrics
+    if isinstance(signal_metrics, dict):
+        all_metrics["training_signal_model"] = signal_metrics
+
+    # Steps 6-7: sequential (need both models)
+    final_steps = [
         ("Step 6/7: Comparing predictions", cmd_compare),
         ("Step 7/7: Plotting individual waveforms", cmd_plot),
     ]
-    timings = []
-    all_metrics = {}
-    for msg, func in steps:
+    for msg, func in final_steps:
         logger.info("=" * 50)
         logger.info(msg)
         logger.info("=" * 50)
@@ -175,7 +224,14 @@ def cmd_run_all(args):
     logger.info(f"  Total: {total:.1f}s")
     logger.info("=" * 50)
 
-    _save_experiment(args, all_metrics, timings, total)
+    exp_dir = _save_experiment(args, all_metrics, timings, total)
+
+    # Run error analysis on the saved experiment
+    logger.info("=" * 50)
+    logger.info("Step 8: Running error analysis")
+    logger.info("=" * 50)
+    from error_analysis.analyze import main as analyze_main
+    _timed("error analysis", analyze_main, experiment_dir=exp_dir)
 
 
 def build_parser():
@@ -234,6 +290,11 @@ def build_parser():
     p.add_argument("--start", type=int, default=cfg.PLOT_START)
     p.add_argument("--end", type=int, default=cfg.PLOT_END)
     p.set_defaults(func=cmd_plot)
+
+    # analyze
+    p = subparsers.add_parser("analyze", help="Run error analysis on an experiment folder")
+    p.add_argument("--experiment", required=True, help="Path to experiment folder")
+    p.set_defaults(func=cmd_analyze)
 
     # run-all
     p = subparsers.add_parser("run-all", help="Run the full pipeline end-to-end")

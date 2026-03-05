@@ -34,16 +34,22 @@ def main(start=cfg.PLOT_START, end=cfg.PLOT_END):
     X_scaled_signal = scaler_wave.transform(X)
     X_scaled_count = scaler_count_wave.transform(X)
 
-    for idx in range(start, end):
+    # Batch predict on the full range at once
+    batch_counts = np.argmax(
+        count_model.predict(X_scaled_count[start:end][..., np.newaxis]), axis=1)
+    batch_signals_norm = signal_model.predict(
+        X_scaled_signal[start:end][..., np.newaxis])
+
+    # Inverse transform all predictions at once
+    batch_signals = batch_signals_norm.copy()
+    batch_signals[:, 0::2] = scaler_t0.inverse_transform(batch_signals_norm[:, 0::2])
+    batch_signals[:, 1::2] = scaler_amp.inverse_transform(batch_signals_norm[:, 1::2])
+
+    for i, idx in enumerate(range(start, end)):
         waveform = X[idx]
         true_signals = y_true[idx]
-        pred_count = np.argmax(count_model.predict(X_scaled_count[[idx]][..., np.newaxis]), axis=1)[0]
-        pred_signals_norm = signal_model.predict(X_scaled_signal[[idx]][..., np.newaxis])[0]
-
-        # Inverse transform predictions
-        pred_signals = pred_signals_norm.copy()
-        pred_signals[0::2] = scaler_t0.inverse_transform([pred_signals[0::2]])[0]
-        pred_signals[1::2] = scaler_amp.inverse_transform([pred_signals[1::2]])[0]
+        pred_count = batch_counts[i]
+        pred_signals = batch_signals[i]
 
         # Extract true signals
         true_t0, true_amp = [], []
