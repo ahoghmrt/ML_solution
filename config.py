@@ -60,6 +60,7 @@ SIGNAL_LOSS_TYPE = "weighted_huber"  # "mae" or "weighted_huber"
 HUBER_DELTA = 1.0               # delta for Huber loss
 T0_LOSS_WEIGHT = 2.0            # weight for t0 components in signal loss
 USE_PIT_LOSS = True             # permutation-invariant training
+GPU_MEMORY_GROWTH = True        # allocate GPU memory incrementally (vs. pre-allocate all)
 
 # ── Plotting ─────────────────────────────────────────────────────
 PLOT_START = 1

@@ -18,6 +18,22 @@ import config as cfg
 logger = logging.getLogger(__name__)
 
 
+def _setup_device(use_gpu=None):
+    """Configure TensorFlow device. Call before building models."""
+    if use_gpu is False:
+        tf.config.set_visible_devices([], 'GPU')
+        logger.info("Device: CPU (GPU disabled via --no-gpu)")
+        return
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        if cfg.GPU_MEMORY_GROWTH:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        logger.info(f"Device: GPU ({len(gpus)} available)")
+    else:
+        logger.info("Device: CPU (no GPU found)")
+
+
 class _EpochLogger(keras.callbacks.Callback):
     """Logs epoch metrics to the logger every N epochs, plus first and last."""
     def __init__(self, total_epochs, interval=cfg.EPOCH_LOG_INTERVAL):
@@ -32,7 +48,8 @@ class _EpochLogger(keras.callbacks.Callback):
             logger.info(f"[Count] Epoch {ep}/{self.total_epochs} - {' - '.join(parts)}")
 
 
-def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE, log_dir=None):
+def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE, log_dir=None, use_gpu=None):
+    _setup_device(use_gpu)
     # -----------------------------
     # Load Dataset
     # -----------------------------

@@ -83,8 +83,9 @@ def cmd_train_count(args):
     from train_count_model import main
     log_dir = os.path.join(cfg.DIR_TENSORBOARD, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "count_model")
     os.makedirs(log_dir, exist_ok=True)
+    use_gpu = getattr(args, 'use_gpu', None)
     return _timed("train count model", main,
-        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir)
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir, use_gpu=use_gpu)
 
 
 def cmd_train_signal(args):
@@ -92,8 +93,9 @@ def cmd_train_signal(args):
     log_dir = os.path.join(cfg.DIR_TENSORBOARD, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "signal_model")
     os.makedirs(log_dir, exist_ok=True)
     use_pit = getattr(args, 'use_pit', None)
+    use_gpu = getattr(args, 'use_gpu', None)
     return _timed("train signal model", main,
-        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir, use_pit=use_pit)
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir, use_pit=use_pit, use_gpu=use_gpu)
 
 
 def cmd_compare(args):
@@ -159,16 +161,16 @@ def _save_experiment(args, all_metrics, timings, total_time):
     return exp_dir
 
 
-def _train_count_worker(epochs, batch_size, test_size, log_dir=None):
+def _train_count_worker(epochs, batch_size, test_size, log_dir=None, use_gpu=None):
     """Worker for parallel training — runs in a subprocess."""
     from train_count_model import main
-    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir)
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir, use_gpu=use_gpu)
 
 
-def _train_signal_worker(epochs, batch_size, test_size, log_dir=None, use_pit=None):
+def _train_signal_worker(epochs, batch_size, test_size, log_dir=None, use_pit=None, use_gpu=None):
     """Worker for parallel training — runs in a subprocess."""
     from train_signal_model import main
-    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir, use_pit=use_pit)
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir, use_pit=use_pit, use_gpu=use_gpu)
 
 
 def cmd_run_all(args):
@@ -212,11 +214,12 @@ def cmd_run_all(args):
 
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=2) as executor:
+        use_gpu = getattr(args, 'use_gpu', None)
         future_count = executor.submit(
-            _train_count_worker, args.epochs, args.batch_size, args.test_size, tb_count_dir)
+            _train_count_worker, args.epochs, args.batch_size, args.test_size, tb_count_dir, use_gpu)
         use_pit = getattr(args, 'use_pit', None)
         future_signal = executor.submit(
-            _train_signal_worker, args.epochs, args.batch_size, args.test_size, tb_signal_dir, use_pit)
+            _train_signal_worker, args.epochs, args.batch_size, args.test_size, tb_signal_dir, use_pit, use_gpu)
         count_metrics = future_count.result()
         signal_metrics = future_signal.result()
     parallel_elapsed = time.time() - t0
@@ -308,6 +311,10 @@ def build_parser():
     p.add_argument("--epochs", type=int, default=cfg.COUNT_MODEL_EPOCHS)
     p.add_argument("--batch-size", type=int, default=cfg.COUNT_MODEL_BATCH_SIZE)
     p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)
+    p.add_argument("--gpu", dest="use_gpu", action="store_true", default=None,
+                   help="Use GPU for training (auto-detect if available)")
+    p.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                   help="Force CPU-only training")
     p.set_defaults(func=cmd_train_count)
 
     # train-signal
@@ -319,6 +326,10 @@ def build_parser():
                    help="Enable permutation-invariant training (Hungarian matching)")
     p.add_argument("--no-pit", dest="use_pit", action="store_false",
                    help="Disable PIT, use standard model.fit()")
+    p.add_argument("--gpu", dest="use_gpu", action="store_true", default=None,
+                   help="Use GPU for training (auto-detect if available)")
+    p.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                   help="Force CPU-only training")
     p.set_defaults(func=cmd_train_signal)
 
     # compare
@@ -365,6 +376,10 @@ def build_parser():
                    help="Enable permutation-invariant training (Hungarian matching)")
     p.add_argument("--no-pit", dest="use_pit", action="store_false",
                    help="Disable PIT, use standard model.fit()")
+    p.add_argument("--gpu", dest="use_gpu", action="store_true", default=None,
+                   help="Use GPU for training (auto-detect if available)")
+    p.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                   help="Force CPU-only training")
     p.set_defaults(func=cmd_run_all)
 
     return parser
