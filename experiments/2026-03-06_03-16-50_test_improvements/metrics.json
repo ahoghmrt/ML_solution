@@ -1,0 +1,40 @@
+{
+  "training_count_model": {
+    "accuracy": 0.35,
+    "roc_auc": 0.7420597528360461,
+    "pr_auc": 0.44570421242036024
+  },
+  "training_signal_model": {
+    "t0_mae": 26.135199410241118,
+    "t0_rmse": 34.3073197634381,
+    "t0_pearson": 0.4277465032739763,
+    "t0_spearman": 0.49745986574283546,
+    "amp_mae": 2.467027801292538,
+    "amp_rmse": 3.1936924953989236,
+    "amp_pearson": 0.5885382329842141,
+    "amp_spearman": 0.6048209232508602
+  },
+  "comparing_predictions": {
+    "t0_mae": 28.165533720632737,
+    "t0_rmse": 36.86404871390859,
+    "t0_r2": -0.5338957715723387,
+    "t0_pearson": 0.524977046101472,
+    "t0_spearman": 0.506306292774025,
+    "amp_mae": 3.099230170810478,
+    "amp_rmse": 3.8863173200468357,
+    "amp_r2": -1.4152935823805017,
+    "amp_pearson": 0.37662334799096436,
+    "amp_spearman": 0.39777082192252905,
+    "count_accuracy": 0.438,
+    "n_signal_pairs": 1349
+  },
+  "timings": {
+    "Step 1/7: Generating waveforms": 0.1,
+    "Step 2/7: Subtracting baselines": 0.2,
+    "Step 3/7: Preparing ML dataset": 0.0,
+    "Steps 4-5/7: Training both models (parallel)": 5.4,
+    "Step 6/7: Comparing predictions": 3.7,
+    "Step 7/7: Plotting individual waveforms": 22.0
+  },
+  "total_time_s": 31.3
+}
