@@ -18,7 +18,21 @@ import config as cfg
 logger = logging.getLogger(__name__)
 
 
-def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE):
+class _EpochLogger(keras.callbacks.Callback):
+    """Logs epoch metrics to the logger every N epochs, plus first and last."""
+    def __init__(self, total_epochs, interval=cfg.EPOCH_LOG_INTERVAL):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.interval = interval
+
+    def on_epoch_end(self, epoch, logs=None):
+        ep = epoch + 1
+        if ep == 1 or ep == self.total_epochs or ep % self.interval == 0:
+            parts = [f"{k}: {v:.4f}" for k, v in (logs or {}).items()]
+            logger.info(f"[Count] Epoch {ep}/{self.total_epochs} - {' - '.join(parts)}")
+
+
+def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE, log_dir=None):
     # -----------------------------
     # Load Dataset
     # -----------------------------
@@ -93,26 +107,29 @@ def main(epochs=cfg.COUNT_MODEL_EPOCHS, batch_size=cfg.COUNT_MODEL_BATCH_SIZE, t
     # Callbacks
     # -----------------------------
     callbacks = [
+        _EpochLogger(epochs),
         keras.callbacks.EarlyStopping(
             monitor='val_accuracy',
             patience=cfg.EARLY_STOPPING_PATIENCE,
             restore_best_weights=True,
-            verbose=1
+            verbose=0
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
             factor=cfg.LR_REDUCE_FACTOR,
             patience=cfg.LR_REDUCE_PATIENCE,
             min_lr=cfg.LR_MIN,
-            verbose=1
+            verbose=0
         ),
         keras.callbacks.ModelCheckpoint(
             filepath='best_count_model.keras',
             monitor='val_accuracy',
             save_best_only=True,
-            verbose=1
+            verbose=0
         )
     ]
+    if log_dir:
+        callbacks.append(keras.callbacks.TensorBoard(log_dir=log_dir))
 
     # -----------------------------
     # Train

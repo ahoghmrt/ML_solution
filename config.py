@@ -22,7 +22,7 @@ T0_MARGIN = 10          # margin from time_end for signal placement (ns)
 NUM_WAVEFORMS = 50000
 NOISE_STD = 0.5
 BASELINE = 200.0
-MIN_SPACING = 0.0001    # minimum spacing between signals (ns)
+MIN_SPACING = 2.0       # minimum spacing between signals (ns)
 MAX_SIGNALS = 7         # max signals per waveform (padding size)
 
 # ── Baseline Subtraction ─────────────────────────────────────────
@@ -33,17 +33,19 @@ QUANTILE = 0.1
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 
-COUNT_MODEL_EPOCHS = 40
+COUNT_MODEL_EPOCHS = 30
 COUNT_MODEL_BATCH_SIZE = 128
 
-SIGNAL_MODEL_EPOCHS = 30
-SIGNAL_MODEL_BATCH_SIZE = 64
+SIGNAL_MODEL_EPOCHS = 20
+SIGNAL_MODEL_BATCH_SIZE = 128
 
 # ── Model Architecture ───────────────────────────────────────────
-CONV_FILTERS = [32, 64]
+CONV_FILTERS = [64, 128]
 CONV_KERNEL_SIZE = 5
-DENSE_UNITS = [128, 64]
+DENSE_UNITS = [256, 128]
 DROPOUT_RATE = 0.3
+
+EPOCH_LOG_INTERVAL = 5          # log epoch progress every N epochs
 
 EARLY_STOPPING_PATIENCE = 6
 LR_REDUCE_PATIENCE = 3
@@ -72,3 +74,4 @@ DIR_COMPARISON_PLOTS = "comparison_plots"
 DIR_WAVEFORM_INSPECTION = "waveform_inspection"
 DIR_LOGS = "logs"
 DIR_EXPERIMENTS = "experiments"
+DIR_TENSORBOARD = "tensorboard_logs"

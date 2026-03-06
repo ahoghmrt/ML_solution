@@ -81,14 +81,19 @@ def cmd_prepare(args):
 
 def cmd_train_count(args):
     from train_count_model import main
+    log_dir = os.path.join(cfg.DIR_TENSORBOARD, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "count_model")
+    os.makedirs(log_dir, exist_ok=True)
     return _timed("train count model", main,
-        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir)
 
 
 def cmd_train_signal(args):
     from train_signal_model import main
+    log_dir = os.path.join(cfg.DIR_TENSORBOARD, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "signal_model")
+    os.makedirs(log_dir, exist_ok=True)
+    use_pit = getattr(args, 'use_pit', None)
     return _timed("train signal model", main,
-        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size)
+        epochs=args.epochs, batch_size=args.batch_size, test_size=args.test_size, log_dir=log_dir, use_pit=use_pit)
 
 
 def cmd_compare(args):
@@ -105,6 +110,12 @@ def cmd_plot(args):
 def cmd_analyze(args):
     from error_analysis.analyze import main
     return _timed("error analysis", main, experiment_dir=args.experiment)
+
+
+def cmd_report(args):
+    from generate_report import generate_report
+    report = generate_report(args.experiment)
+    print(report)
 
 
 def _save_experiment(args, all_metrics, timings, total_time):
@@ -134,6 +145,11 @@ def _save_experiment(args, all_metrics, timings, total_time):
             dst = os.path.join(exp_dir, src_dir)
             shutil.copytree(src_dir, dst, dirs_exist_ok=True)
 
+    # Copy TensorBoard logs
+    tb_run_dir = os.path.join(cfg.DIR_TENSORBOARD, name if name else folder_name)
+    if os.path.isdir(tb_run_dir):
+        shutil.copytree(tb_run_dir, os.path.join(exp_dir, "tensorboard"), dirs_exist_ok=True)
+
     # Copy log
     log_path = os.path.join(cfg.DIR_LOGS, "pipeline.log")
     if os.path.isfile(log_path):
@@ -143,16 +159,16 @@ def _save_experiment(args, all_metrics, timings, total_time):
     return exp_dir
 
 
-def _train_count_worker(epochs, batch_size, test_size):
+def _train_count_worker(epochs, batch_size, test_size, log_dir=None):
     """Worker for parallel training — runs in a subprocess."""
     from train_count_model import main
-    return main(epochs=epochs, batch_size=batch_size, test_size=test_size)
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir)
 
 
-def _train_signal_worker(epochs, batch_size, test_size):
+def _train_signal_worker(epochs, batch_size, test_size, log_dir=None, use_pit=None):
     """Worker for parallel training — runs in a subprocess."""
     from train_signal_model import main
-    return main(epochs=epochs, batch_size=batch_size, test_size=test_size)
+    return main(epochs=epochs, batch_size=batch_size, test_size=test_size, log_dir=log_dir, use_pit=use_pit)
 
 
 def cmd_run_all(args):
@@ -186,12 +202,21 @@ def cmd_run_all(args):
     logger.info("=" * 50)
     logger.info("Steps 4-5/7: Training both models in parallel")
     logger.info("=" * 50)
+
+    # TensorBoard log dirs
+    tb_run_name = getattr(args, 'experiment_name', None) or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tb_count_dir = os.path.join(cfg.DIR_TENSORBOARD, tb_run_name, "count_model")
+    tb_signal_dir = os.path.join(cfg.DIR_TENSORBOARD, tb_run_name, "signal_model")
+    os.makedirs(tb_count_dir, exist_ok=True)
+    os.makedirs(tb_signal_dir, exist_ok=True)
+
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=2) as executor:
         future_count = executor.submit(
-            _train_count_worker, args.epochs, args.batch_size, args.test_size)
+            _train_count_worker, args.epochs, args.batch_size, args.test_size, tb_count_dir)
+        use_pit = getattr(args, 'use_pit', None)
         future_signal = executor.submit(
-            _train_signal_worker, args.epochs, args.batch_size, args.test_size)
+            _train_signal_worker, args.epochs, args.batch_size, args.test_size, tb_signal_dir, use_pit)
         count_metrics = future_count.result()
         signal_metrics = future_signal.result()
     parallel_elapsed = time.time() - t0
@@ -233,6 +258,14 @@ def cmd_run_all(args):
     logger.info("=" * 50)
     from error_analysis.analyze import main as analyze_main
     _timed("error analysis", analyze_main, experiment_dir=exp_dir)
+
+    # Generate evaluation report
+    logger.info("=" * 50)
+    logger.info("Step 9: Generating evaluation report")
+    logger.info("=" * 50)
+    from generate_report import generate_report
+    report = _timed("evaluation report", generate_report, experiment_dir=exp_dir)
+    logger.info(f"\n{report}")
 
 
 def build_parser():
@@ -282,6 +315,10 @@ def build_parser():
     p.add_argument("--epochs", type=int, default=cfg.SIGNAL_MODEL_EPOCHS)
     p.add_argument("--batch-size", type=int, default=cfg.SIGNAL_MODEL_BATCH_SIZE)
     p.add_argument("--test-size", type=float, default=cfg.TEST_SIZE)
+    p.add_argument("--pit", dest="use_pit", action="store_true", default=None,
+                   help="Enable permutation-invariant training (Hungarian matching)")
+    p.add_argument("--no-pit", dest="use_pit", action="store_false",
+                   help="Disable PIT, use standard model.fit()")
     p.set_defaults(func=cmd_train_signal)
 
     # compare
@@ -298,6 +335,11 @@ def build_parser():
     p = subparsers.add_parser("analyze", help="Run error analysis on an experiment folder")
     p.add_argument("--experiment", required=True, help="Path to experiment folder")
     p.set_defaults(func=cmd_analyze)
+
+    # report
+    p = subparsers.add_parser("report", help="Generate evaluation report for an experiment")
+    p.add_argument("--experiment", required=True, help="Path to experiment folder")
+    p.set_defaults(func=cmd_report)
 
     # run-all
     p = subparsers.add_parser("run-all", help="Run the full pipeline end-to-end")
@@ -319,6 +361,10 @@ def build_parser():
     p.add_argument("--start", type=int, default=cfg.PLOT_START)
     p.add_argument("--end", type=int, default=cfg.PLOT_END)
     p.add_argument("--experiment-name", default=None, help="Optional name for the experiment folder")
+    p.add_argument("--pit", dest="use_pit", action="store_true", default=None,
+                   help="Enable permutation-invariant training (Hungarian matching)")
+    p.add_argument("--no-pit", dest="use_pit", action="store_false",
+                   help="Disable PIT, use standard model.fit()")
     p.set_defaults(func=cmd_run_all)
 
     return parser

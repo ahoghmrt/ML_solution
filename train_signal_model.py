@@ -63,6 +63,20 @@ def _build_signal_loss(max_signals):
         return 'mae'
 
 
+class _EpochLogger(keras.callbacks.Callback):
+    """Logs epoch metrics to the logger every N epochs, plus first and last."""
+    def __init__(self, total_epochs, interval=cfg.EPOCH_LOG_INTERVAL):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.interval = interval
+
+    def on_epoch_end(self, epoch, logs=None):
+        ep = epoch + 1
+        if ep == 1 or ep == self.total_epochs or ep % self.interval == 0:
+            parts = [f"{k}: {v:.4f}" for k, v in (logs or {}).items()]
+            logger.info(f"[Signal] Epoch {ep}/{self.total_epochs} - {' - '.join(parts)}")
+
+
 class _HistoryWrapper:
     """Wraps a dict to look like keras History for plotting compatibility."""
     def __init__(self, history_dict):
@@ -71,12 +85,16 @@ class _HistoryWrapper:
 
 def _pit_training_loop(model, X_train, y_train, X_val, y_val,
                        signal_counts_train, signal_counts_val,
-                       max_signals, epochs, batch_size):
+                       max_signals, epochs, batch_size, log_dir=None):
     """Custom training loop with permutation-invariant matching."""
     optimizer = keras.optimizers.Adam()
     loss_fn = _build_signal_loss(max_signals)
     if isinstance(loss_fn, str):
         loss_fn = keras.losses.MeanAbsoluteError()
+
+    tb_writer = None
+    if log_dir:
+        tb_writer = tf.summary.create_file_writer(log_dir)
 
     best_val_loss = np.inf
     patience_counter = 0
@@ -165,8 +183,19 @@ def _pit_training_loop(model, X_train, y_train, X_val, y_val,
         history['mae'].append(train_mae)
         history['val_mae'].append(val_mae)
 
-        logger.info(f"Epoch {epoch+1}/{epochs} - loss: {train_loss:.4f} - mae: {train_mae:.4f} "
-                     f"- val_loss: {val_loss:.4f} - val_mae: {val_mae:.4f}")
+        ep = epoch + 1
+        if ep == 1 or ep == epochs or ep % cfg.EPOCH_LOG_INTERVAL == 0:
+            logger.info(f"[Signal-PIT] Epoch {ep}/{epochs} - loss: {train_loss:.4f} - mae: {train_mae:.4f} "
+                         f"- val_loss: {val_loss:.4f} - val_mae: {val_mae:.4f}")
+
+        if tb_writer:
+            with tb_writer.as_default():
+                tf.summary.scalar('epoch_loss', train_loss, step=epoch)
+                tf.summary.scalar('epoch_mae', train_mae, step=epoch)
+                tf.summary.scalar('epoch_val_loss', val_loss, step=epoch)
+                tf.summary.scalar('epoch_val_mae', val_mae, step=epoch)
+                tf.summary.scalar('epoch_learning_rate', float(optimizer.learning_rate), step=epoch)
+            tb_writer.flush()
 
         # ModelCheckpoint
         if val_loss < best_val_loss:
@@ -197,7 +226,7 @@ def _pit_training_loop(model, X_train, y_train, X_val, y_val,
     return _HistoryWrapper(history)
 
 
-def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE):
+def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE, test_size=cfg.TEST_SIZE, log_dir=None, use_pit=None):
     # -----------------------------
     # Load Dataset
     # -----------------------------
@@ -282,35 +311,39 @@ def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE,
     # -----------------------------
     # Train
     # -----------------------------
-    if cfg.USE_PIT_LOSS:
+    pit_enabled = use_pit if use_pit is not None else cfg.USE_PIT_LOSS
+    if pit_enabled:
         logger.info("Using permutation-invariant training (PIT)")
         history = _pit_training_loop(
             model, X_train, y_train, X_val, y_val,
             counts_train, counts_val,
-            max_signals, epochs, batch_size
+            max_signals, epochs, batch_size, log_dir=log_dir
         )
     else:
         callbacks = [
+            _EpochLogger(epochs),
             keras.callbacks.EarlyStopping(
                 monitor='val_mae',
                 patience=cfg.EARLY_STOPPING_PATIENCE,
                 restore_best_weights=True,
-                verbose=1
+                verbose=0
             ),
             keras.callbacks.ReduceLROnPlateau(
                 monitor='val_loss',
                 factor=cfg.LR_REDUCE_FACTOR,
                 patience=cfg.LR_REDUCE_PATIENCE,
                 min_lr=cfg.LR_MIN,
-                verbose=1
+                verbose=0
             ),
             keras.callbacks.ModelCheckpoint(
                 filepath='best_signal_model.keras',
                 monitor='val_mae',
                 save_best_only=True,
-                verbose=1
+                verbose=0
             )
         ]
+        if log_dir:
+            callbacks.append(keras.callbacks.TensorBoard(log_dir=log_dir))
         history = model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
