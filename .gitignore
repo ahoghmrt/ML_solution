@@ -16,8 +16,24 @@ predictions/
 # Experiment tracking (keep results, skip bulky inspection plots)
 experiments/**/waveform_inspection/
 
+# TensorBoard
+tensorboard_logs/
+
+# IDE
+.vscode/
+
 # Jupyter
 .ipynb_checkpoints/
+Untitled*.ipynb
+
+# LaTeX artifacts
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
 
 # Python
 __pycache__/
