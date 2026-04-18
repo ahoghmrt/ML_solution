@@ -41,25 +41,41 @@ except AttributeError:
 
 @_register(package="signal_model")
 class WeightedHuberLoss(keras.losses.Loss):
-    """Huber loss with per-component weights (higher weight on t0)."""
+    """Huber loss with per-component weights and active-slot masking.
+
+    Inactive slots are padded with zeros in both t0 and amplitude. Any slot
+    where both components are 0 is excluded from the loss so the model isn't
+    trained to predict padding, and the gradient signal isn't diluted.
+    """
     def __init__(self, max_signals=cfg.MAX_SIGNALS, delta=cfg.HUBER_DELTA,
                  t0_weight=cfg.T0_LOSS_WEIGHT, **kwargs):
         super().__init__(**kwargs)
         self.max_signals = max_signals
         self.delta = delta
         self.t0_weight = t0_weight
-        w = []
-        for _ in range(max_signals):
-            w.extend([t0_weight, 1.0])
-        self.weights = tf.constant(w, dtype=tf.float32)
+        self.component_weights = tf.constant([t0_weight, 1.0], dtype=tf.float32)
 
     def call(self, y_true, y_pred):
-        error = y_true - y_pred
+        y_true_r = tf.reshape(y_true, (-1, self.max_signals, 2))
+        y_pred_r = tf.reshape(y_pred, (-1, self.max_signals, 2))
+
+        # Active slot: both t0 > 0 and amp > 0 (padding is exactly zero)
+        active = tf.cast(
+            (y_true_r[..., 0] > 0) & (y_true_r[..., 1] > 0),
+            tf.float32,
+        )  # (batch, max_signals)
+
+        error = y_true_r - y_pred_r
         abs_error = tf.abs(error)
-        huber = tf.where(abs_error <= self.delta,
-                         0.5 * tf.square(error),
-                         self.delta * (abs_error - 0.5 * self.delta))
-        return tf.reduce_mean(huber * self.weights)
+        huber = tf.where(
+            abs_error <= self.delta,
+            0.5 * tf.square(error),
+            self.delta * (abs_error - 0.5 * self.delta),
+        )  # (batch, max_signals, 2)
+
+        weighted = huber * self.component_weights * active[..., tf.newaxis]
+        active_components = tf.maximum(tf.reduce_sum(active) * 2.0, 1.0)
+        return tf.reduce_sum(weighted) / active_components
 
     def get_config(self):
         config = super().get_config()
@@ -166,8 +182,17 @@ def _pit_training_loop(model, X_train, y_train, X_val, y_val,
             grads = tape.gradient(batch_loss, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
+            # Report MAE over active slots only (padding is zeros in both components)
+            active = tf.cast(
+                (tf.reshape(y_reordered_tf, (-1, max_signals, 2))[..., 0] > 0) &
+                (tf.reshape(y_reordered_tf, (-1, max_signals, 2))[..., 1] > 0),
+                tf.float32,
+            )
+            abs_err = tf.abs(tf.reshape(y_reordered_tf - y_pred, (-1, max_signals, 2)))
+            masked = abs_err * active[..., tf.newaxis]
+            denom = tf.maximum(tf.reduce_sum(active) * 2.0, 1.0)
             epoch_losses.append(float(batch_loss))
-            epoch_maes.append(float(tf.reduce_mean(tf.abs(y_reordered_tf - y_pred))))
+            epoch_maes.append(float(tf.reduce_sum(masked) / denom))
 
         # Validation
         val_pred = model(X_val, training=False)
@@ -189,8 +214,16 @@ def _pit_training_loop(model, X_train, y_train, X_val, y_val,
                 new_target[2*r+1] = y_val[bi, 2*c+1]
             y_val_reordered[bi] = new_target
 
-        val_loss = float(loss_fn(tf.constant(y_val_reordered, dtype=tf.float32), val_pred))
-        val_mae = float(tf.reduce_mean(tf.abs(tf.constant(y_val_reordered, dtype=tf.float32) - val_pred)))
+        y_val_reordered_tf = tf.constant(y_val_reordered, dtype=tf.float32)
+        val_loss = float(loss_fn(y_val_reordered_tf, val_pred))
+        val_active = tf.cast(
+            (tf.reshape(y_val_reordered_tf, (-1, max_signals, 2))[..., 0] > 0) &
+            (tf.reshape(y_val_reordered_tf, (-1, max_signals, 2))[..., 1] > 0),
+            tf.float32,
+        )
+        val_abs_err = tf.abs(tf.reshape(y_val_reordered_tf - val_pred, (-1, max_signals, 2)))
+        val_denom = tf.maximum(tf.reduce_sum(val_active) * 2.0, 1.0)
+        val_mae = float(tf.reduce_sum(val_abs_err * val_active[..., tf.newaxis]) / val_denom)
 
         train_loss = np.mean(epoch_losses)
         train_mae = np.mean(epoch_maes)
@@ -258,21 +291,36 @@ def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE,
     logger.debug(f"Label shape: {y.shape}, Time shape: {time.shape}")
 
     # -----------------------------
-    # Normalize targets (t0 and amplitude separately)
+    # Normalize targets with physics-based constants
     # -----------------------------
-    t0s = y[:, :, 0]
-    amps = y[:, :, 1]
+    # Previously a per-slot StandardScaler was fit on the padded label matrix.
+    # Because inactive slots are padded with zeros, the scaler's column means
+    # were pulled toward 0 — which injected a systematic early-t0 bias into
+    # inverse-transformed predictions. Using fixed physical bounds keeps the
+    # padded-zero targets at exactly 0 in normalized space so masked loss +
+    # simple inverse transform stay correct.
+    t0_scale = float(cfg.TIME_END)
+    amp_scale = float(cfg.AMPLITUDE_MAX)
 
-    scaler_t0 = StandardScaler()
-    scaler_amp = StandardScaler()
-
-    t0s_norm = scaler_t0.fit_transform(t0s)
-    amps_norm = scaler_amp.fit_transform(amps)
+    t0s_norm = y[:, :, 0] / t0_scale
+    amps_norm = y[:, :, 1] / amp_scale
 
     y_norm = np.stack([t0s_norm, amps_norm], axis=-1)
     y_flat = y_norm.reshape((y.shape[0], max_signals * 2))
 
-    # Save target scalers
+    # StandardScaler-compatible wrapper so downstream code (compare, plot,
+    # analyze) can keep calling inverse_transform without changes.
+    def _const_scaler(scale):
+        s = StandardScaler()
+        s.mean_ = np.zeros(max_signals, dtype=float)
+        s.scale_ = np.full(max_signals, scale, dtype=float)
+        s.var_ = s.scale_ ** 2
+        s.n_features_in_ = max_signals
+        return s
+
+    scaler_t0 = _const_scaler(t0_scale)
+    scaler_amp = _const_scaler(amp_scale)
+
     os.makedirs(cfg.DIR_TRAINING_PLOTS, exist_ok=True)
     joblib.dump(scaler_t0, os.path.join(cfg.DIR_TRAINING_PLOTS, "t0_scaler.pkl"))
     joblib.dump(scaler_amp, os.path.join(cfg.DIR_TRAINING_PLOTS, "amp_scaler.pkl"))
@@ -405,27 +453,41 @@ def main(epochs=cfg.SIGNAL_MODEL_EPOCHS, batch_size=cfg.SIGNAL_MODEL_BATCH_SIZE,
     y_pred_t0 = scaler_t0.inverse_transform(y_val_pred[:, t0_idx])
     y_pred_amp = scaler_amp.inverse_transform(y_val_pred[:, amp_idx])
 
-    t0_mae = mean_absolute_error(y_val_t0, y_pred_t0)
-    amp_mae = mean_absolute_error(y_val_amp, y_pred_amp)
-    t0_rmse = np.sqrt(mean_squared_error(y_val_t0, y_pred_t0))
-    amp_rmse = np.sqrt(mean_squared_error(y_val_amp, y_pred_amp))
+    # Restrict metrics to active slots (truth padded with zeros means inactive).
+    # Previously MAE/Pearson were computed over the full (N, max_signals) matrix
+    # including padding, which inflated the numbers with synthetic "zero targets".
+    active_mask = (y_val_t0 > 0) & (y_val_amp > 0)   # (N, max_signals)
+    t0_true_act = y_val_t0[active_mask]
+    t0_pred_act = y_pred_t0[active_mask]
+    amp_true_act = y_val_amp[active_mask]
+    amp_pred_act = y_pred_amp[active_mask]
 
-    t0_pearson, _ = pearsonr(y_val_t0.ravel(), y_pred_t0.ravel())
-    t0_spearman, _ = spearmanr(y_val_t0.ravel(), y_pred_t0.ravel())
-    amp_pearson, _ = pearsonr(y_val_amp.ravel(), y_pred_amp.ravel())
-    amp_spearman, _ = spearmanr(y_val_amp.ravel(), y_pred_amp.ravel())
+    t0_mae = mean_absolute_error(t0_true_act, t0_pred_act)
+    amp_mae = mean_absolute_error(amp_true_act, amp_pred_act)
+    t0_rmse = np.sqrt(mean_squared_error(t0_true_act, t0_pred_act))
+    amp_rmse = np.sqrt(mean_squared_error(amp_true_act, amp_pred_act))
+
+    t0_pearson, _ = pearsonr(t0_true_act, t0_pred_act)
+    t0_spearman, _ = spearmanr(t0_true_act, t0_pred_act)
+    amp_pearson, _ = pearsonr(amp_true_act, amp_pred_act)
+    amp_spearman, _ = spearmanr(amp_true_act, amp_pred_act)
 
     logger.info(f"t0  - MAE: {t0_mae:.4f} ns, RMSE: {t0_rmse:.4f} ns, "
                 f"Pearson: {t0_pearson:.4f}, Spearman: {t0_spearman:.4f}")
     logger.info(f"amp - MAE: {amp_mae:.4f}, RMSE: {amp_rmse:.4f}, "
                 f"Pearson: {amp_pearson:.4f}, Spearman: {amp_spearman:.4f}")
 
-    # Per-signal-slot MAE
+    # Per-signal-slot MAE (active rows only)
     per_slot_t0_mae = []
     per_slot_amp_mae = []
     for s in range(max_signals):
-        slot_t0 = mean_absolute_error(y_val_t0[:, s], y_pred_t0[:, s])
-        slot_amp = mean_absolute_error(y_val_amp[:, s], y_pred_amp[:, s])
+        col_mask = active_mask[:, s]
+        if not col_mask.any():
+            per_slot_t0_mae.append(0.0)
+            per_slot_amp_mae.append(0.0)
+            continue
+        slot_t0 = mean_absolute_error(y_val_t0[col_mask, s], y_pred_t0[col_mask, s])
+        slot_amp = mean_absolute_error(y_val_amp[col_mask, s], y_pred_amp[col_mask, s])
         per_slot_t0_mae.append(slot_t0)
         per_slot_amp_mae.append(slot_amp)
         logger.debug(f"  Slot {s}: t0 MAE = {slot_t0:.4f} ns, amp MAE = {slot_amp:.4f}")
