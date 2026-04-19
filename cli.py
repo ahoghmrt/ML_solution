@@ -114,6 +114,13 @@ def cmd_analyze(args):
     return _timed("error analysis", main, experiment_dir=args.experiment)
 
 
+def cmd_baselines(args):
+    from compare_baselines import main
+    return _timed("compare baselines", main,
+                  subset=args.subset, threshold=args.threshold,
+                  output_dir=args.output_dir)
+
+
 def cmd_report(args):
     from generate_report import generate_report
     report = generate_report(args.experiment)
@@ -346,6 +353,19 @@ def build_parser():
     p = subparsers.add_parser("analyze", help="Run error analysis on an experiment folder")
     p.add_argument("--experiment", required=True, help="Path to experiment folder")
     p.set_defaults(func=cmd_analyze)
+
+    # baselines
+    p = subparsers.add_parser(
+        "baselines",
+        help="Compare the trained ML model against classical baselines"
+    )
+    p.add_argument("--subset", type=int, default=None,
+                   help="Use only the first N validation waveforms (faster)")
+    p.add_argument("--threshold", type=float, default=2.0,
+                   help="Amplitude threshold for peak detection (in pulse-scale units)")
+    p.add_argument("--output-dir", default=cfg.DIR_COMPARISON_PLOTS,
+                   help="Where to save the comparison CSV/markdown/plot")
+    p.set_defaults(func=cmd_baselines)
 
     # report
     p = subparsers.add_parser("report", help="Generate evaluation report for an experiment")
