@@ -22,6 +22,8 @@ T0_MARGIN = 10          # margin from time_end for signal placement (ns)
 NUM_WAVEFORMS = 50000
 NOISE_STD = 0.5
 BASELINE = 200.0
+BASELINE_JITTER = 5.0   # per-waveform constant baseline jitter (± units, uniform)
+BASELINE_DRIFT_MAX = 2.0  # max linear baseline drift across the window (± units)
 MIN_SPACING = 2.0       # minimum spacing between signals (ns)
 MAX_SIGNALS = 7         # max signals per waveform (padding size)
 
